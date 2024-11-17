@@ -52,17 +52,14 @@ UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_rx;
 
 /* USER CODE BEGIN PV */
-float actPosition = 0;
-float refPos= 0;
-float drefPos = 0;
+float speed= 0;
 uint8_t enable = 1;
 float force;
 
-uint8_t dir = 0;
-float posVariance = 0;
-uint32_t counter = 0;
+float posVariance = 0; /* Use commands to drive the motor speed */
 
 rMod_t hmod1 = {0};
+pCon_t hcon1 = {0};
 
 /* USER CODE END PV */
 
@@ -155,20 +152,21 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-	//force emulation
-	int32_t fOffset = 412;
+  	uint32_t timeStamp = 0; /* Timer for UART tx */
 
+  	//force emulation
+	int32_t fOffset = 412;
 	float scalingFactor_N = 175.471;  // bits per Newton
-	//float scalingFactor_Kg = 1721.374;  // bits per Kg
 
 	hmod1.m = 0.5;
 	hmod1.c = 40; // N.s/m
 	hmod1.k = 100; // N/m
 	hmod1.dt = 400; // us
 
-	Sensor_Receive();
+	hcon1.Kp = 1;
+	hcon1.Ki = 1;
 
-//	uint32_t timeStamp = HAL_GetTick();
+	Sensor_Receive();
 
   while (1)
   {
@@ -177,25 +175,33 @@ int main(void)
 
 	  int16_t raw = ((Sensor_Receive() & 0x00FFFF00)>>8) + fOffset;
 	  force = (float)raw / scalingFactor_N;
-	  //float forceKg =  (float)raw / scalingFactor_Kg;
 
+	// Filter Force
 	  static float smoothForce = 0;
 	  float LPF_Beta = 0.2; // 0<ß<1
 	  smoothForce = smoothForce - (LPF_Beta * (smoothForce - force));
 
+	// Reference model
 	//------------------------------------------//
 	 refModel_Tick(&hmod1, smoothForce);
 	//------------------------------------------//
 
-	 refPos = hmod1.vel * 1000; // to mm/s
+	// Position Controller
+	//------------------------------------------//
+	 posCont_Tick(&hcon1, hmod1.pos, (StepCon_GetPosition()/1000));
+	//------------------------------------------//
 
-	 if(enable) StepCon_Speed(refPos);
+	 /* Drive motor Speed with corrected ref velocity */
+	 speed = (hmod1.vel * hcon1.vel) * 1000; // to mm/s
+
+	 if(enable) StepCon_Speed(speed);
 	 else 		StepCon_Speed(0);
 
-//	 if(timeStamp + 500 < HAL_GetTick()){
-//		 UART1_printf("%.4f | %.4f\n\r", smoothForce, (hmod1.pos * 1000));
-//		 timeStamp = HAL_GetTick();
-//	 }
+	 // Console logs
+	 if(timeStamp + 500 < HAL_GetTick()){
+		 //UART1_printf("%.4f | %.4f\n\r", smoothForce, (hmod1.pos * 1000));
+		 timeStamp = HAL_GetTick();
+	 }
 
 	//	/* Set here a timer to wait for the elapsed time.
 	//	 * You can compare the timer counter and trigger an alarm
@@ -489,13 +495,13 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 
 
 	if(!strncmp((const char*)cmd, "4", len)) {
-		StepCon_offfetZero(+10);
+		//StepCon_offfetZero(+10);
 
 	}
 
 
 	if(!strncmp((const char*)cmd, "5", len)) {
-		StepCon_offfetZero(-10);
+		//StepCon_offfetZero(-10);
 
 	}
 

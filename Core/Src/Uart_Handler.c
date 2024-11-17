@@ -18,7 +18,7 @@
 extern UART_HandleTypeDef huart1;
 extern DMA_HandleTypeDef hdma_usart1_rx;
 
-#define UART1_BUF_LEN 2000		/* Ring Buffer size */
+#define UART1_BUF_LEN 500		/* Ring Buffer size */
 #define  UART1_iPtr   (UART1_BUF_LEN - __HAL_DMA_GET_COUNTER(&hdma_usart1_rx))  // UART1 input pointer
 
 uint8_t UART1_Rx_Buf[UART1_BUF_LEN];    /* Main Ring Buffer */

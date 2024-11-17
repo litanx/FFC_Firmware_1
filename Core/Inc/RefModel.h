@@ -13,10 +13,12 @@
 // Reference model system parameters
 typedef struct {
 
+	/* Model parameters */
+	uint32_t dt; 		// Sampling rate - time (us)
+
 	double m; 			// Mass (Kg)
 	double c; 			// Damping ratio (N.s/m)
-	double k; 			// Elastic constant (N/m)
-	uint32_t dt; 		// Sampling rate - time (us)
+	double k; 			// Elastic constant (N/m) ** NOT USED ** Replaced by 2d array
 
 	float posMaxLim; 	// Max displacement limit (m)
 	float posMinLim; 	// Min displacement limit (m)
@@ -26,6 +28,8 @@ typedef struct {
 
 	float accMaxLim; 	// Max acceleration limit (m/s2)
 	float accMinLim; 	// Min acceleration limit (m/s2)
+
+	/* Model status */
 
 	double acc;			// Acceleration
 	double vel;			// Velocity
@@ -39,9 +43,21 @@ typedef struct {
 }rMod_t;
 
 
+/* Position Controller parameters */
+typedef struct{
+
+	double Kp;		/* Proportional constant 	*/
+	double Ki;		/* Integral constant 		*/
+
+	double vel;		/* Velocity					*/
+	double vel_1; 	/* Prev Velocity	 		*/
+
+}pCon_t;
+
 /* Exported functions -------------------------------------------*/
 
-void refModel_Tick(rMod_t *mod, float force);
+void posCont_Tick(pCon_t *con, double refPos, double realPos);
+void refModel_Tick(rMod_t *mod, float inputForce);
 
 
 #endif /* INC_REFMODEL_H_ */
