@@ -41,6 +41,8 @@ void posCont_Tick(pCon_t *con, double refPos, double realPos){
 	/* Proportional controller */
 	con->vel = con->Kp * ( refPos - realPos);
 
+	/* TODO: Implement a  generic PI function that can be used multiple times using different struct variables */
+
 }
 
 
@@ -48,7 +50,7 @@ void posCont_Tick(pCon_t *con, double refPos, double realPos){
 // xdd = 1/m [f(t) - c*xd - k*x]
 // Compute system position for a given input force
 
-void refModel_Tick(rMod_t *mod, float inputForce){
+void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 
 	double dt = (double)mod->dt / 1000000;	// Convert dt to (s)
 
@@ -59,9 +61,15 @@ void refModel_Tick(rMod_t *mod, float inputForce){
 	mod->pos = mod->pos_1 + (dt * mod->vel_1);
 
 	/* Here calculate forces relatives to the velocity (i.e. friction, damping, etc) */
+	double dampingForce = (mod->c * mod->vel);
+
+	// F = u * N -> where N is the force between the moving object and the sliding surface.
+	double firctionForce = mod->us * 1;
+	/* Be careful because the friction force is opposed to any movement and can´t generate a negative force*/
+
 
 	/* Here calculate forces relative to the position of the system (i.e. variable spring K) */
-	float springForce = interpolate_force(mod, (StepCon_GetPosition()/1000));
+	double springForce = interpolate_force(mod, /*iPosition*/mod->pos);
 
 	/* Do I want to have mass dependent to the position? for instance I could emulate backslash */
 	/* Do I want to have damping and friction dependent to the position? emulate different surfaces? */
@@ -69,7 +77,7 @@ void refModel_Tick(rMod_t *mod, float inputForce){
 
 	// Compute ref Acceleration ->  ∑F = m * a
 	//mod->acc = ((1 / (mod->m)) * (inputForce - (mod->c * mod->vel) - (mod->k * mod->pos)));
-	mod->acc = ((1 / (mod->m)) * (inputForce - (mod->c * mod->vel) - springForce ));
+	mod->acc = ((1 / (mod->m)) * (iForce - dampingForce - firctionForce - springForce ));
 
 	// Store previous values
 	mod->pos_1 = mod->pos;
@@ -88,8 +96,10 @@ void refModel_Tick(rMod_t *mod, float inputForce){
  * */
 static float interpolate_force(rMod_t *mod, double x){
 
+//Sheet 3	//	float curve[][2] = {{-0.10, -50}, {-0.10, -20}, {-0.001, -5}, {0.001, 5}, {0.1, 20}, {0.1, 20}, {0.10, 20}, {0.10, 50}};
+//Sheet 1
+	float curve[][2] = {{-0.10, -50}, {-0.10, 0}, {0.028, 0}, {0.03, 7}, {0.03, -7}, {0.032, 0}, {0.10, 10}, {0.10, 50}};
 //	float curve[][2] = {{-0.10, -50}, {-0.10, 0}, {0.02, 0}, {0.03, 20}, {0.03, -20}, {0.04, 0}, {0.10, 0}, {0.10, 50}};
-	float curve[][2] = {{-0.10, -50}, {-0.10, -20}, {0.0, -5}, {0.0, 5}, {0.1, 20}, {0.1, 20}, {0.10, 200}, {0.10, 50}};
 
 
 	/* if pos < min known value saturate */

@@ -20,14 +20,18 @@ typedef struct {
 	double c; 			// Damping ratio (N.s/m)
 	double k; 			// Elastic constant (N/m) ** NOT USED ** Replaced by 2d array
 
+	double us; 			// Static friction coefficient  0.8
+	double ud;			// Dynamic friction coefficient 0.4
+	double N;			// Normal force (Friction force: F = u * N)
+
 	float posMaxLim; 	// Max displacement limit (m)
 	float posMinLim; 	// Min displacement limit (m)
 
-	float velMaxLim; 	// Max velocity limit (m/s)
-	float velMinLim; 	// Min velocity limit (m/s)
+//	float velMaxLim; 	// Max velocity limit (m/s)
+//	float velMinLim; 	// Min velocity limit (m/s)
 
-	float accMaxLim; 	// Max acceleration limit (m/s2)
-	float accMinLim; 	// Min acceleration limit (m/s2)
+//	float accMaxLim; 	// Max acceleration limit (m/s2)
+//	float accMinLim; 	// Min acceleration limit (m/s2)
 
 	/* Model status */
 
@@ -57,7 +61,7 @@ typedef struct{
 /* Exported functions -------------------------------------------*/
 
 void posCont_Tick(pCon_t *con, double refPos, double realPos);
-void refModel_Tick(rMod_t *mod, float inputForce);
+void refModel_Tick(rMod_t *mod, double iForce, double iPosition);
 
 
 #endif /* INC_REFMODEL_H_ */

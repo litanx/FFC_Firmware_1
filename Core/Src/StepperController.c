@@ -16,6 +16,7 @@ static uint16_t pulseTime = 0; /* Controls the time between pulses hence the spe
 static uint8_t dir = 0;
 static int32_t stepCount = 0;
 
+double MotorPos = 0;
 
 ///* Set current actuator position as Zero plus a given offset */
 //void StepCon_setZero(float offset){
@@ -92,7 +93,7 @@ static int32_t stepCount = 0;
 /* Returns actuator position in mm */
 float StepCon_GetPosition(){
 
-	return ((stepCount / MICROSTEP) * MM_PER_REV);
+	return MotorPos;
 }
 
 // set linear actuator to a speed of speed mm/s
@@ -119,17 +120,29 @@ void StepCon_Speed(float speed){
  **/
 void StepCon_pulseTick(){
 
-	__HAL_TIM_SET_COUNTER(&htim2, pulseTime);
 
-	if(!pulseTime) return;
+	if(!pulseTime){
+		__HAL_TIM_SET_COUNTER(&htim2, 1000);
+		return;
+	}
+
+	__HAL_TIM_SET_COUNTER(&htim2, pulseTime);
 
 	if(pulseTime<2){
 		asm("NOP");
 	}
+
+
+	if(dir && MotorPos > MAX_MOTOR_LIM) return;
+	if(!dir && MotorPos < MIN_MOTOR_LIM) return;
+
+
+	/*Send pulse */
 	HAL_GPIO_WritePin(GPIOG, GPIO_PIN_5, SET);
 	HAL_GPIO_WritePin(GPIOG, GPIO_PIN_5, RESET);
 
 	if(dir) stepCount++;		/* Track how many pulses have been sent to the stepper */
 	else 	stepCount--;
 
+	MotorPos = ((double)stepCount / MICROSTEP) * MM_PER_REV;
 }

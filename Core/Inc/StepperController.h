@@ -30,8 +30,8 @@
 
 #define ACTUATOR_PITCH		4		// linear displacement (mm/rev)
 
-#define MAX_LIM 			50 		// Max displacement in mm
-#define MIN_LIM			   -50		// min displacement in mm
+#define MAX_MOTOR_LIM 		110 		// Max displacement in mm
+#define MIN_MOTOR_LIM		-110		// min displacement in mm
 
 
 void delay_us(uint16_t us);
