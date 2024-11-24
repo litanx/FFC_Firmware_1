@@ -23,6 +23,7 @@ typedef struct {
 	double us; 			// Static friction coefficient  0.8
 	double ud;			// Dynamic friction coefficient 0.4
 	double N;			// Normal force (Friction force: F = u * N)
+	double dfv; 		// Dynamic Friction Velocity (Speed at which dynamic friction becomes constant)
 
 	float posMaxLim; 	// Max displacement limit (m)
 	float posMinLim; 	// Min displacement limit (m)

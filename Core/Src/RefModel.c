@@ -6,9 +6,7 @@
  */
 
 #include "RefModel.h"
-
-#include "StepperController.h"
-
+#include <math.h>
 
 /* Private functions --------------------------------------------------------------------*/
 static float interpolate_force(rMod_t *mod, double x);
@@ -41,16 +39,25 @@ void posCont_Tick(pCon_t *con, double refPos, double realPos){
 	/* Proportional controller */
 	con->vel = con->Kp * ( refPos - realPos);
 
+	//Limits
+	if(con->vel > 0.8) con->vel = 0.8;
+	if(con->vel < -0.8) con->vel = -0.8;
+
 	/* TODO: Implement a  generic PI function that can be used multiple times using different struct variables */
 
 }
 
 
-// mass-spring-damper model
-// xdd = 1/m [f(t) - c*xd - k*x]
-// Compute system position for a given input force
+/*
+ * Mass-spring-damper model with stick/slip friction
+ * Compute system status for a given input force and position
+ */
 
 void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
+
+	double frictionForce = 0;
+	uint8_t saturated = 0;		/* Saturated Position - Hard Stops Emulation */
+	uint8_t stuck = 0;			/* Velocity is under dynamic friction velocity threshold (dfv) */
 
 	double dt = (double)mod->dt / 1000000;	// Convert dt to (s)
 
@@ -60,16 +67,48 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 	// Compute ref Position
 	mod->pos = mod->pos_1 + (dt * mod->vel_1);
 
-	/* Here calculate forces relatives to the velocity (i.e. friction, damping, etc) */
+	// Limit position Hard Stops
+	if(mod->pos > mod->posMaxLim){
+
+		mod->pos = mod->posMaxLim;
+		saturated = 1;
+	}
+
+	if(mod->pos < mod->posMinLim){
+
+		mod->pos = mod->posMinLim;
+		saturated = 1;
+	}
+
+	/* Calculate damping force */
 	double dampingForce = (mod->c * mod->vel);
 
-	// F = u * N -> where N is the force between the moving object and the sliding surface.
-	double firctionForce = mod->us * 1;
-	/* Be careful because the friction force is opposed to any movement and can´t generate a negative force*/
+	/* Calculate forces relative to the position of the system */
+//	double springForce = interpolate_force(mod, /*iPosition*/mod->pos);
+	double springForce = (mod->k * mod->pos);
 
+	/* Friction Model --------------------------------------------------------------------------------*/
+	// F = u * N -> where N is the Normal force between the moving object and the sliding surface.
 
-	/* Here calculate forces relative to the position of the system (i.e. variable spring K) */
-	double springForce = interpolate_force(mod, /*iPosition*/mod->pos);
+	/* Velocity - Hit crossing (threshold) */
+	if( mod->vel < mod->dfv && mod->vel > (-mod->dfv)) stuck = 1;
+
+	if(stuck){
+
+		int8_t sign = ((iForce - springForce) > 0) ? 1 : -1;
+		double modForce = fabs(iForce - springForce);
+
+		/* Choose the smallest of these two*/
+		frictionForce = (modForce < (mod->us * mod->N)) ? (sign)*modForce : (sign)*(mod->us * mod->N);
+
+	}else{
+
+		int8_t sign = (mod->vel > 0) ? 1 : -1;
+
+		frictionForce = (sign) * (mod->ud * mod->N);
+	}
+
+	/*------------------------------------------------------------------------------------------------*/
 
 	/* Do I want to have mass dependent to the position? for instance I could emulate backslash */
 	/* Do I want to have damping and friction dependent to the position? emulate different surfaces? */
@@ -77,7 +116,10 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 
 	// Compute ref Acceleration ->  ∑F = m * a
 	//mod->acc = ((1 / (mod->m)) * (inputForce - (mod->c * mod->vel) - (mod->k * mod->pos)));
-	mod->acc = ((1 / (mod->m)) * (iForce - dampingForce - firctionForce - springForce ));
+	mod->acc = ((1 / (mod->m)) * (iForce - dampingForce - frictionForce - springForce ));
+
+	// Reset Velocity integrator if required.
+	if(saturated || stuck) 	mod->vel = 0;	// TODO: Do I need to reset if stuck? or can I let it run free?
 
 	// Store previous values
 	mod->pos_1 = mod->pos;

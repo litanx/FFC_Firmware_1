@@ -18,6 +18,8 @@ static int32_t stepCount = 0;
 
 double MotorPos = 0;
 
+static uint16_t stepLimit = 0; // anti-stall, prevents the motor running if the refModel is not ticking.
+
 ///* Set current actuator position as Zero plus a given offset */
 //void StepCon_setZero(float offset){
 //
@@ -111,6 +113,9 @@ void StepCon_Speed(float speed){
 		StepCon_CW; 			// CW Direction
 		pulseTime = 1000000/((speed/MM_PER_REV)* MICROSTEP);
 	}
+
+	stepLimit = 0;
+
 }
 
 
@@ -121,21 +126,25 @@ void StepCon_Speed(float speed){
 void StepCon_pulseTick(){
 
 
+
 	if(!pulseTime){
 		__HAL_TIM_SET_COUNTER(&htim2, 1000);
 		return;
 	}
 
-	__HAL_TIM_SET_COUNTER(&htim2, pulseTime);
-
-	if(pulseTime<2){
+	if(pulseTime<4){
+		__HAL_TIM_SET_COUNTER(&htim2, 1000);
 		asm("NOP");
+		return;
 	}
 
+	__HAL_TIM_SET_COUNTER(&htim2, pulseTime);
 
 	if(dir && MotorPos > MAX_MOTOR_LIM) return;
 	if(!dir && MotorPos < MIN_MOTOR_LIM) return;
 
+	if(stepLimit > 240) return;
+	stepLimit++;
 
 	/*Send pulse */
 	HAL_GPIO_WritePin(GPIOG, GPIO_PIN_5, SET);
@@ -143,6 +152,8 @@ void StepCon_pulseTick(){
 
 	if(dir) stepCount++;		/* Track how many pulses have been sent to the stepper */
 	else 	stepCount--;
+
+
 
 	MotorPos = ((double)stepCount / MICROSTEP) * MM_PER_REV;
 }

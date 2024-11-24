@@ -158,16 +158,19 @@ int main(void)
 	int32_t fOffset = 412;
 	float scalingFactor_N = 175.471;  // bits per Newton
 
-	hmod1.m = 1;
-	hmod1.c = 20; 		// N.s/m
-	hmod1.us = 0.8; 	// Dynamic friction coefficient
-	hmod1.ud = 0.4; 	// Static friction coefficient
-	hmod1.N = 10; 		// Normal Force (Weight)
-	hmod1.k = 100; 		// N/m
 	hmod1.dt = 1200; 	// us
 
-	hmod1.posMaxLim = 0.1; // Model Hard Stops
-	hmod1.posMinLim = -0.1;
+	hmod1.m = 1;
+	hmod1.c = 20; 		// N.s/m
+	hmod1.k = 100; 		// N/m
+
+	hmod1.us = 0.8; 	// Dynamic friction coefficient
+	hmod1.ud = 0.4; 	// Static friction coefficient
+	hmod1.N = 2; 		// Normal Force (Weight)
+	hmod1.dfv = 0.0001;	// m/s
+
+	hmod1.posMaxLim = 0.12; // Model Hard Stops
+	hmod1.posMinLim = -0.12;
 
 	hcon1.Kp = 10;
 	hcon1.Ki = 1;
