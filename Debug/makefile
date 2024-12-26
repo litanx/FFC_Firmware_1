@@ -61,7 +61,7 @@ main-build: FFC_Firmware_1.elf secondary-outputs
 
 # Tool invocations
 FFC_Firmware_1.elf FFC_Firmware_1.map: $(OBJS) $(USER_OBJS) C:\Users\diego\Escritorio\Proyectos\ DIY\Force\ Feedback\ Controller\FFC_Firmware_1\STM32F429ZITX_FLASH.ld makefile objects.list $(OPTIONAL_TOOL_DEPS)
-	arm-none-eabi-gcc -o "FFC_Firmware_1.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\diego\Escritorio\Proyectos DIY\Force Feedback Controller\FFC_Firmware_1\STM32F429ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="FFC_Firmware_1.map" -Wl,--gc-sections -static -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
+	arm-none-eabi-gcc -o "FFC_Firmware_1.elf" @"objects.list" $(USER_OBJS) $(LIBS) -mcpu=cortex-m4 -T"C:\Users\diego\Escritorio\Proyectos DIY\Force Feedback Controller\FFC_Firmware_1\STM32F429ZITX_FLASH.ld" --specs=nosys.specs -Wl,-Map="FFC_Firmware_1.map" -Wl,--gc-sections -static -u _scanf_float -u _printf_float --specs=nano.specs -mfpu=fpv4-sp-d16 -mfloat-abi=hard -mthumb -Wl,--start-group -lc -lm -Wl,--end-group
 	@echo 'Finished building target: $@'
 	@echo ' '
 

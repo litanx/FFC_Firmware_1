@@ -28,6 +28,7 @@
 #include "Uart_Handler.h"
 #include "StepperController.h"
 #include "RefModel.h"
+#include "ADS1220.h"
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -45,6 +46,8 @@
 /* USER CODE END PM */
 
 /* Private variables ---------------------------------------------------------*/
+SPI_HandleTypeDef hspi1;
+
 TIM_HandleTypeDef htim2;
 TIM_HandleTypeDef htim3;
 
@@ -56,10 +59,26 @@ float speed= 0;
 uint8_t enable = 1;
 float force;
 
+int32_t fSens = 0;
+
 float posVariance = 0; /* Use commands to drive the motor speed */
 
 rMod_t hmod1 = {0};
-pCon_t hcon1 = {0};
+piCon_t hcon1 = {0}; // PI position controller
+
+int32_t ch1 = 0;
+
+cMap_1d_t curve[] = {	{-0.10, -50},
+						{-0.10, 0},
+						{0.028, 0},
+						{0.03, 7},
+						{0.03, -7},
+						{0.032, 0},
+						{0.10, 10},
+						{0.10, 50}};
+
+uint32_t cont=0;
+
 
 /* USER CODE END PV */
 
@@ -70,40 +89,41 @@ static void MX_DMA_Init(void);
 static void MX_USART1_UART_Init(void);
 static void MX_TIM2_Init(void);
 static void MX_TIM3_Init(void);
+static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
-void delay_us(uint16_t us){
+//void delay_us(uint16_t us){
 //	__HAL_TIM_SET_COUNTER(&htim2, 0);
 //	while(__HAL_TIM_GET_COUNTER(&htim2) < us);
-}
+//}
 
-
-
-//https://cdn.sparkfun.com/assets/learn_tutorials/5/4/6/hx711F_EN.pdf
-int32_t Sensor_Receive(void){
-
-	static uint32_t pData = 0;
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
-
-	if(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12) == GPIO_PIN_SET) return pData;
-//	while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12) == GPIO_PIN_SET);
-	pData = 0;
-
-	// Read ChA Gain 128
-	for(int i=0; i<24; i++){
-		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
-		pData = pData<<1;
-		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
-		if (HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12) == GPIO_PIN_SET) pData++;
-	}
-
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
-	//pData=pData^0x800000;
-	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
-
-	if(pData&0x00800000) pData |= 0xff000000; // Convert 24bits 2's complement into 32bits
-	return pData;
-}
+//
+//
+////https://cdn.sparkfun.com/assets/learn_tutorials/5/4/6/hx711F_EN.pdf
+//int32_t Sensor_Receive(void){
+//
+//	static uint32_t pData = 0;
+//	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
+//
+//	if(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12) == GPIO_PIN_SET) return pData;
+////	while(HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12) == GPIO_PIN_SET);
+//	pData = 0;
+//
+//	// Read ChA Gain 128
+//	for(int i=0; i<24; i++){
+//		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+//		pData = pData<<1;
+//		HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
+//		if (HAL_GPIO_ReadPin(GPIOD, GPIO_PIN_12) == GPIO_PIN_SET) pData++;
+//	}
+//
+//	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_SET);
+//	//pData=pData^0x800000;
+//	HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
+//
+//	if(pData&0x00800000) pData |= 0xff000000; // Convert 24bits 2's complement into 32bits
+//	return pData;
+//}
 /* USER CODE END PFP */
 
 /* Private user code ---------------------------------------------------------*/
@@ -143,6 +163,7 @@ int main(void)
   MX_USART1_UART_Init();
   MX_TIM2_Init();
   MX_TIM3_Init();
+  MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
   HAL_TIM_Base_Start(&htim3);
   HAL_TIM_Base_Start_IT(&htim2);
@@ -152,42 +173,68 @@ int main(void)
   /* Infinite loop */
   /* USER CODE BEGIN WHILE */
 
-  	uint32_t timeStamp = 0; /* Timer for UART tx */
+//https://roboticx.ps/product/ad620-instrumentation-amplifier-module/
+
+//  ADS1220_select_mux_config(&hspi1, ADS1220_MUX_AIN1_AIN2, &regs);
+//  ADS1220_set_pga_gain(&hspi1, ADS1220_PGA_GAIN_128, &regs);
+//  ADS1220_set_operating_mode(&hspi1, ADS1220_MODE_TURBO, &regs);
+//  ADS1220_set_data_rate(&hspi1, ADS1220_TM_2000SPS, &regs);
+//  ADS1220_set_conv_mode_continuous(&hspi1, &regs);
+//  ADS1220_set_voltage_ref(&hspi1, ADS1220_VREF_EXT_REF_1, &regs);
+//  ADS1220_enable_PSW(&hspi1, &regs);
+//  ADS1220_get_config(&hspi1, &regs);
+
+  ADS1220_regs regs = { 0x3E, 0xD4, 0x88, 0x00 };
+  ADS1220_init(&hspi1, &regs); // Optionally check for failure
+  ADS1220_set_conv_mode_single_shot(&hspi1, &regs);
+  //ADS1220_start_conversion(&hspi1);
+
+
+ // 	uint32_t timeStamp = 0; /* Timer for UART tx */
 
   	//force emulation
-	int32_t fOffset = 412;
-	float scalingFactor_N = 175.471;  // bits per Newton
+	int32_t fOffset = 123;
+	float scalingFactor_N = 84.5;  // bits per Newton
 
-	hmod1.dt = 1200; 	// us
+	hmod1.dt = 666; 	// us /* This can go lower than 500us due ADC timing limitations */
 
-	hmod1.m = 1;
-	hmod1.c = 20; 		// N.s/m
-	hmod1.k = 100; 		// N/m
+	hmod1.m = 0.5;
+	hmod1.c = 10; 		// N.s/m
+	hmod1.k = 50; 		// N/m
 
-	hmod1.us = 0.8; 	// Dynamic friction coefficient
-	hmod1.ud = 0.4; 	// Static friction coefficient
-	hmod1.N = 2; 		// Normal Force (Weight)
-	hmod1.dfv = 0.0001;	// m/s
+	hmod1.cMap = &curve;
+	hmod1.cMap_size = 8;
+
+	hmod1.us = 0.2; 		// Dynamic friction coefficient
+	hmod1.ud = 0.2; 		// Static friction coefficient
+	hmod1.N = 1; 			// Normal Force (Weight)
+	hmod1.dfv = 0.00001;	// m/s
 
 	hmod1.posMaxLim = 0.12; // Model Hard Stops
 	hmod1.posMinLim = -0.12;
 
-	hcon1.Kp = 10;
-	hcon1.Ki = 1;
+	hmod1.velMaxLim = 1;	// Hardware max reachable speed.
+	hmod1.velMinLim = -1;
 
-	Sensor_Receive();
+	hcon1.dt = hmod1.dt;
+	hcon1.kp = 10;
+	hcon1.ki = 1;
+	hcon1.outMax = hmod1.velMaxLim;
+	hcon1.outMin = hmod1.velMinLim;
+
+//	Sensor_Receive();
 
   while (1)
   {
 
 	  UART1_Handler();
 
-	  int16_t raw = ((Sensor_Receive() & 0x00FFFF00)>>8) + fOffset;
+	  int16_t raw = ((ADS1220_read_singleshot(&hspi1, GPIOC, GPIO_PIN_4, 10) & 0x00FFFF00)>>8) + fOffset;
 	  force = (float)raw / scalingFactor_N;
 
 	// Filter Force
 	  static float smoothForce = 0;
-	  float LPF_Beta = 0.2; // 0<ß<1
+	  float LPF_Beta = 1;//0.05; // 0<ß<1
 	  smoothForce = smoothForce - (LPF_Beta * (smoothForce - force));
 
 	// Reference model
@@ -197,26 +244,28 @@ int main(void)
 
 	// Position Controller
 	//------------------------------------------//
-	 posCont_Tick(&hcon1, hmod1.pos, (StepCon_GetPosition()/1000));
+	 //posCont_Tick(&hcon1, hmod1.pos, (StepCon_GetPosition()/1000));
+	float refSpeed = Compute_PI(&hcon1, hmod1.pos, (StepCon_GetPosition()/1000));
+
 	//------------------------------------------//
 
 	 /* Drive motor Speed with corrected ref velocity */
-	 speed = (/*hmod1.vel*/  hcon1.vel) * 1000; // to mm/s
+	 speed = (hmod1.vel + refSpeed) * 1000; // to mm/s
 
 	 if(enable) StepCon_Speed(speed);
 	 else 		StepCon_Speed(0);
 
-	 // Console logs
-	 if(timeStamp + 500 < HAL_GetTick()){
-		 //UART1_printf("%.4f | %.4f\n\r", smoothForce, (hmod1.pos * 1000));
-		 timeStamp = HAL_GetTick();
-	 }
-
-	//	/* Set here a timer to wait for the elapsed time.
-	//	 * You can compare the timer counter and trigger an alarm
-	//	 * if the time was already gone by the time the program
-	//	 * reached this point
-	//	 **/
+//	 // Console logs
+//	 if(timeStamp + 100 < HAL_GetTick()){
+//		 UART1_printf("%d, %.4f \n\r", raw, smoothForce);
+//		 timeStamp = HAL_GetTick();
+//	 }
+//
+//	//	/* Set here a timer to wait for the elapsed time.
+//	//	 * You can compare the timer counter and trigger an alarm
+//	//	 * if the time was already gone by the time the program
+//	//	 * reached this point
+//	//	 **/
 
 	  if(__HAL_TIM_GET_COUNTER(&htim3) < hmod1.dt){
 
@@ -274,12 +323,50 @@ void SystemClock_Config(void)
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
   RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV1;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
 
   if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
   {
     Error_Handler();
   }
+}
+
+/**
+  * @brief SPI1 Initialization Function
+  * @param None
+  * @retval None
+  */
+static void MX_SPI1_Init(void)
+{
+
+  /* USER CODE BEGIN SPI1_Init 0 */
+
+  /* USER CODE END SPI1_Init 0 */
+
+  /* USER CODE BEGIN SPI1_Init 1 */
+
+  /* USER CODE END SPI1_Init 1 */
+  /* SPI1 parameter configuration*/
+  hspi1.Instance = SPI1;
+  hspi1.Init.Mode = SPI_MODE_MASTER;
+  hspi1.Init.Direction = SPI_DIRECTION_2LINES;
+  hspi1.Init.DataSize = SPI_DATASIZE_8BIT;
+  hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
+  hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
+  hspi1.Init.NSS = SPI_NSS_HARD_OUTPUT;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
+  hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
+  hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
+  hspi1.Init.CRCPolynomial = 10;
+  if (HAL_SPI_Init(&hspi1) != HAL_OK)
+  {
+    Error_Handler();
+  }
+  /* USER CODE BEGIN SPI1_Init 2 */
+
+  /* USER CODE END SPI1_Init 2 */
+
 }
 
 /**
@@ -433,9 +520,12 @@ static void MX_GPIO_Init(void)
   /* GPIO Ports Clock Enable */
   __HAL_RCC_GPIOH_CLK_ENABLE();
   __HAL_RCC_GPIOA_CLK_ENABLE();
+  __HAL_RCC_GPIOC_CLK_ENABLE();
   __HAL_RCC_GPIOD_CLK_ENABLE();
   __HAL_RCC_GPIOG_CLK_ENABLE();
-  __HAL_RCC_GPIOC_CLK_ENABLE();
+
+  /*Configure GPIO pin Output Level */
+  HAL_GPIO_WritePin(GPIOA, GPIO_PIN_4, GPIO_PIN_RESET);
 
   /*Configure GPIO pin Output Level */
   HAL_GPIO_WritePin(GPIOD, GPIO_PIN_14, GPIO_PIN_RESET);
@@ -451,6 +541,19 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Mode = GPIO_MODE_EVT_RISING;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   HAL_GPIO_Init(B1_GPIO_Port, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PA4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
+  HAL_GPIO_Init(GPIOA, &GPIO_InitStruct);
+
+  /*Configure GPIO pin : PC4 */
+  GPIO_InitStruct.Pin = GPIO_PIN_4;
+  GPIO_InitStruct.Mode = GPIO_MODE_INPUT;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  HAL_GPIO_Init(GPIOC, &GPIO_InitStruct);
 
   /*Configure GPIO pin : PD12 */
   GPIO_InitStruct.Pin = GPIO_PIN_12;
@@ -483,52 +586,111 @@ static void MX_GPIO_Init(void)
 
 /* USER CODE BEGIN 4 */
 
+
 void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 
 	/* Process your commands here */
+	float aux = 0;
 
-	if(!len) return;
+	if(!len) return; /* Ignore empty commands */
 
-	if(!strncmp((const char*)cmd, "1", len)) {
-		//StepCon_Rotate(360, 1000);
 
-		posVariance += 1;
-		StepCon_Speed(posVariance);
+	if( isCmd("cmap=") ) {
+
+		cMap_1d_t* points = (cMap_1d_t*) &hmod1.cMap;
+
+		// Skip the "cmap=" prefix
+		const char* data_start = (const char*)cmd + 5;
+
+		// Determine the number of pairs by counting commas
+		uint16_t num_pairs = 0;
+		const char* ptr = data_start;
+		while (*ptr) {
+			if (*ptr == ',') {
+				num_pairs++;
+			}
+			ptr++;
+		}
+
+		// Each pair has two values, so number of pairs is half the commas
+		num_pairs = (num_pairs + 1) / 2;
+		if (num_pairs > 255) {
+			//fprintf(stderr, "Exceeded maximum number of pairs (%d).\n", MAX_PAIRS);
+			return;
+		}
+
+		// Parse the data points using sscanf
+		size_t index = 0;
+		ptr = data_start;
+		while (index < num_pairs && *ptr) {
+			float x, y;
+			int scanned = sscanf(ptr, "%f,%f", &x, &y);
+			if (scanned == 2) {
+				points[index].x = x;
+				points[index].f = y;
+				index++;
+			}
+
+			// Move pointer to the next pair
+			while (*ptr && *ptr != ',') ptr++;
+			if (*ptr == ',') ptr++;
+			while (*ptr && *ptr != ',') ptr++;
+			if (*ptr == ',') ptr++;
+		}
+
+		hmod1.cMap_size = num_pairs;
+
+	}else if( isCmd("mass=") ) {
+
+		int res = sscanf((const char*)cmd,"mass=%f", &aux);
+		if(res) {
+			hmod1.m = aux;
+		}
+
+	}else if( isCmd("damp=") ) {
+		int res = sscanf((const char*)cmd,"damp=%f", &aux);
+		if(res) {
+			hmod1.c = aux;
+		}
+
+	}else if( isCmd("staf=") ) {
+		int res = sscanf((const char*)cmd,"staf=%f", &aux);
+		if(res) {
+			hmod1.us = aux;
+		}
+
+	}else if( isCmd("dynf=") ) {
+		int res = sscanf((const char*)cmd,"dynf=%f", &aux);
+		if(res) {
+			hmod1.ud = aux;
+		}
+
+	}else if( isCmd("pmax=") ) {
+		int res = sscanf((const char*)cmd,"pmax=%f", &aux);
+		if(res) {
+			hmod1.posMaxLim = aux;
+		}
+
+	}else if( isCmd("pmin=") ) {
+		int res = sscanf((const char*)cmd,"pmin=%f", &aux);
+		if(res) {
+			hmod1.posMinLim = aux;
+		}
+
+	}else if( isCmd("vmax=") ) {
+		int res = sscanf((const char*)cmd,"vmax=%f", &aux);
+		if(res) {
+			hmod1.velMaxLim = aux;
+		}
+
+	}else if( isCmd("vmin=") ) {
+		int res = sscanf((const char*)cmd,"vmin=%f", &aux);
+		if(res) {
+			hmod1.velMinLim = aux;
+		}
 	}
 
 
-	if(!strncmp((const char*)cmd, "2", len)) {
-		posVariance -= 1;
-		StepCon_Speed(posVariance);
-	}
-
-
-	if(!strncmp((const char*)cmd, "4", len)) {
-		//StepCon_offfetZero(+10);
-
-	}
-
-
-	if(!strncmp((const char*)cmd, "5", len)) {
-		//StepCon_offfetZero(-10);
-
-	}
-
-	if(!strncmp((const char*)cmd, "0", len)) {
-		enable = 0;
-
-	}
-
-	if(!strncmp((const char*)cmd, "3", len)) {
-		enable = 1;
-
-	}
-
-
-
-
-//
-asm("NOP");
 	/*----------------------------*/
 }
 
@@ -542,6 +704,23 @@ asm("NOP");
 //
 //}
 
+void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
+
+	uint8_t SPIbuf[3] = {0};
+	long int bit24;
+
+	HAL_SPI_Receive(&hspi1, SPIbuf, 3, 1);
+
+	bit24 = SPIbuf[0];
+	bit24 = (bit24 << 8) | SPIbuf[1];
+	bit24 = (bit24 << 8) | SPIbuf[2]; //Converting 3 bytes to a 24 bit int
+
+	bit24 = (bit24 << 8);
+	fSens = (bit24 >> 8); //Converting 24 bit two's complement to 32 bit two's complement
+
+	cont++;
+	asm("NOP");
+}
 /* USER CODE END 4 */
 
 /**

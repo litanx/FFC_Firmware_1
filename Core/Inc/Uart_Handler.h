@@ -7,8 +7,10 @@
   ******************************************************************************
   */
 
-  #ifndef UART_HANDLER
-  #define UART_HANDLER
+#ifndef UART_HANDLER
+#define UART_HANDLER
+
+#define isCmd(__CMD__) !strncmp((const char*)cmd, (__CMD__), strlen((__CMD__)))
 
 void UART1_Init();
 void UART1_Handler();

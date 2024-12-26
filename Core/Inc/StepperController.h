@@ -25,10 +25,10 @@
  /*-------------------------------------------------------------------------------*/
 
 #define MICROSTEP   		10000		// Steps per rev
-#define MM_PER_REV			40		// displacement per rev in mm
-#define STEP_PWM			200 	// Time per pulse (uS)
+#define MM_PER_REV			40		// displacement per rev in mm (40 for the linear belt driven actuator)
+//#define STEP_PWM			200 	// Time per pulse (uS)
 
-#define ACTUATOR_PITCH		4		// linear displacement (mm/rev)
+//#define ACTUATOR_PITCH		4		// linear displacement (mm/rev)
 
 #define MAX_MOTOR_LIM 		110 		// Max displacement in mm
 #define MIN_MOTOR_LIM		-110		// min displacement in mm

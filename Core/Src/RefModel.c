@@ -8,6 +8,12 @@
 #include "RefModel.h"
 #include <math.h>
 
+
+/*---------------------------------------------------------------------------------------*/
+// Macros
+#define CONSTRAIN(x,lower,upper)    ((x)<(lower)?(lower):((x)>(upper)?(upper):(x)))
+
+
 /* Private functions --------------------------------------------------------------------*/
 static float interpolate_force(rMod_t *mod, double x);
 
@@ -15,17 +21,11 @@ static float interpolate_force(rMod_t *mod, double x);
 /*
  * NOTES:
  *
- *  The force component due to the spring constant can be calculated by interpolating force values based
- *  on the position stored in an 2d array.
- *
- *  The friction can be done using a estate machine that uses the velocity as an input and the output value
- *  is added next to the damping coefficient. Just treat it as an additional force applied to the system.
- *
  * How to link two models
  *
- * How to implement aditional external forces (i.e. vibration, etc)
+ * How to implement additional external forces (i.e. vibration, etc) i.e. subsonic wav files
  *
- * How to implement a change of 0  ref (i.e. trim feature)
+ * How to implement a change of 0 ref (i.e. trim feature)
  *
  * How to implement backslash (i.e. a loose lever that has some play)
  *
@@ -33,17 +33,25 @@ static float interpolate_force(rMod_t *mod, double x);
 
 
 //https://uk.mathworks.com/help/sps/ref/discretepicontroller.html
+float Compute_PI(piCon_t *con, float setpoint, float input){
 
-void posCont_Tick(pCon_t *con, double refPos, double realPos){
+	float dt = (float)con->dt / 1000000;	// Convert dt to (s)
 
-	/* Proportional controller */
-	con->vel = con->Kp * ( refPos - realPos);
+    // Calculate the error term
+    float error = setpoint - input;
 
-	//Limits
-	if(con->vel > 0.8) con->vel = 0.8;
-	if(con->vel < -0.8) con->vel = -0.8;
+    // Calculate the integral term
+    float temp_iTerm = con->iTerm + (con->ki * dt * error);
 
-	/* TODO: Implement a  generic PI function that can be used multiple times using different struct variables */
+    // Calculate the output
+    float u = (con->kp * error) + con->iTerm;
+
+    // Saturate the output
+    float u_sat = CONSTRAIN( u, con->outMin, con->outMax );
+
+    if(u_sat == u) con->iTerm = temp_iTerm; 	// If output clipping, do not update controller iTerm
+
+    return u_sat;
 
 }
 
@@ -56,36 +64,53 @@ void posCont_Tick(pCon_t *con, double refPos, double realPos){
 void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 
 	double frictionForce = 0;
-	uint8_t saturated = 0;		/* Saturated Position - Hard Stops Emulation */
-	uint8_t stuck = 0;			/* Velocity is under dynamic friction velocity threshold (dfv) */
+	uint8_t stuck = 0;			/* = 1 when velocity is under dynamic friction velocity threshold (dfv) */
 
 	double dt = (double)mod->dt / 1000000;	// Convert dt to (s)
 
 	// Compute ref Velocity
 	mod->vel = mod->vel_1 + (dt * mod->acc_1);
 
+	// Limit Velocity Hard Stops
+	mod->vSaturated = 0;
+
+	if(mod->vel > mod->velMaxLim){
+
+		mod->vel = mod->velMaxLim;
+		mod->vSaturated = 1;
+	}
+
+	if(mod->vel < mod->velMinLim){
+
+		mod->vel = mod->velMinLim;
+		mod->vSaturated = 1;
+	}
+
+
 	// Compute ref Position
 	mod->pos = mod->pos_1 + (dt * mod->vel_1);
 
 	// Limit position Hard Stops
+	mod->pSaturated = 0;
+
 	if(mod->pos > mod->posMaxLim){
 
 		mod->pos = mod->posMaxLim;
-		saturated = 1;
+		mod->pSaturated = 1;
 	}
 
 	if(mod->pos < mod->posMinLim){
 
 		mod->pos = mod->posMinLim;
-		saturated = 1;
+		mod->pSaturated = 1;
 	}
 
 	/* Calculate damping force */
 	double dampingForce = (mod->c * mod->vel);
 
 	/* Calculate forces relative to the position of the system */
-//	double springForce = interpolate_force(mod, /*iPosition*/mod->pos);
-	double springForce = (mod->k * mod->pos);
+	double springForce = interpolate_force(mod, mod->pos);
+//	double springForce = (mod->k * mod->pos);
 
 	/* Friction Model --------------------------------------------------------------------------------*/
 	// F = u * N -> where N is the Normal force between the moving object and the sliding surface.
@@ -95,17 +120,16 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 
 	if(stuck){
 
-		int8_t sign = ((iForce - springForce) > 0) ? 1 : -1;
-		double modForce = fabs(iForce - springForce);
+		int8_t sign = ((iForce - springForce) > 0) ? 1 : -1; 	// Get the sign of the applied force (input-spring)
+		double modForce = fabs(iForce - springForce);			// Get the module of the applied force
 
-		/* Choose the smallest of these two*/
+		/* Choose the smallest force: [applied force] Vs [Static Friction] */
 		frictionForce = (modForce < (mod->us * mod->N)) ? (sign)*modForce : (sign)*(mod->us * mod->N);
 
 	}else{
 
-		int8_t sign = (mod->vel > 0) ? 1 : -1;
-
-		frictionForce = (sign) * (mod->ud * mod->N);
+		int8_t sign = (mod->vel > 0) ? 1 : -1;					// Get the sign of the velocity
+		frictionForce = (sign) * (mod->ud * mod->N);			// Calculate dynamic friction
 	}
 
 	/*------------------------------------------------------------------------------------------------*/
@@ -115,11 +139,10 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 	/* In a two axis controller the forces relatives to position will depend on a 2 dimensional array */
 
 	// Compute ref Acceleration ->  ∑F = m * a
-	//mod->acc = ((1 / (mod->m)) * (inputForce - (mod->c * mod->vel) - (mod->k * mod->pos)));
 	mod->acc = ((1 / (mod->m)) * (iForce - dampingForce - frictionForce - springForce ));
 
 	// Reset Velocity integrator if required.
-	if(saturated || stuck) 	mod->vel = 0;	// TODO: Do I need to reset if stuck? or can I let it run free?
+	if(mod->pSaturated || stuck) 	mod->vel = 0;	// TODO: Do I need to reset if stuck? or can I let it run free?
 
 	// Store previous values
 	mod->pos_1 = mod->pos;
@@ -138,30 +161,44 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
  * */
 static float interpolate_force(rMod_t *mod, double x){
 
-//Sheet 3	//	float curve[][2] = {{-0.10, -50}, {-0.10, -20}, {-0.001, -5}, {0.001, 5}, {0.1, 20}, {0.1, 20}, {0.10, 20}, {0.10, 50}};
-//Sheet 1
-	float curve[][2] = {{-0.10, -50}, {-0.10, 0}, {0.028, 0}, {0.03, 7}, {0.03, -7}, {0.032, 0}, {0.10, 10}, {0.10, 50}};
-//	float curve[][2] = {{-0.10, -50}, {-0.10, 0}, {0.02, 0}, {0.03, 20}, {0.03, -20}, {0.04, 0}, {0.10, 0}, {0.10, 50}};
+	if(!mod->cMap_size) 	return 0; // Empty vector
+	if(mod->cMap == NULL) 	return 0; // No vector defined
 
+	cMap_1d_t* cMap = (cMap_1d_t*)mod->cMap;
+	uint8_t last = mod->cMap_size - 1;
 
-	/* if pos < min known value saturate */
-	if(x < curve[0][0])			return curve[0][1];
+	/* if pos < min known value > saturate */
+	if(x < cMap[0].x)				return cMap[0].f;
 
-	/* if pos > max known value saturate */
-	else if(x > curve[7][0])		return curve[7][1];
+	/* if pos > max known value > saturate */
+	else if(x > cMap[last].x)		return cMap[last].f;
 
-	/* otherwise find the adjacent upper and lower points in the array */
-	for(int i=0; i<(8-1); i++){
+	/* otherwise find the adjacent upper and lower points in the array to interpolate */
+	for(int i=0; i<last; i++){
 
-		if( curve[i][0] <= x && curve[i+1][0] > x){
+		if( cMap[i].x <= x && cMap[i+1].x > x)
+			return  cMap[i].f + ((x - cMap[i].x) * (cMap[i+1].f - cMap[i].f)) / (cMap[i+1].x - cMap[i].x);
 
-			return  curve[i][1] + ((x -curve[i][0]) * (curve[i+1][1]-curve[i][1])) / (curve[i+1][0]-curve[i][0]);
-
-		}
 	}
 
 	return 0; /* The program should never reach this line */
 }
+
+//		/* if pos < min known value > saturate */
+//			if(x < curve[0][0])				return curve[0][1];
+//
+//			/* if pos > max known value > saturate */
+//			else if(x > curve[7][0])		return curve[7][1];
+//
+//			/* otherwise find the adjacent upper and lower points in the array to interpolate */
+//			for(int i=0; i<(8-1); i++){
+//
+//				if( curve[i][0] <= x && curve[i+1][0] > x){
+//
+//					return  curve[i][1] + ((x -curve[i][0]) * (curve[i+1][1]-curve[i][1])) / (curve[i+1][0]-curve[i][0]);
+//
+//				}
+//			}
 
 
 
