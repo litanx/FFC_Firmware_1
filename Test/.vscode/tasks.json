@@ -1,0 +1,12 @@
+{
+    "tasks": [
+        {
+            "type": "shell",
+            "label": "run the makefile",
+            "command": "mingw32-make.exe",
+            "args": ["a.exe"],
+            "problemMatcher": [],
+        }
+    ],
+    "version": "2.0.0"
+}

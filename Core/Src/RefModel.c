@@ -5,13 +5,13 @@
  *      Author: diego
  */
 
-#include "RefModel.h"
+#include <stdio.h>
 #include <math.h>
-
+#include "RefModel.h"
 
 /*---------------------------------------------------------------------------------------*/
 // Macros
-#define CONSTRAIN(x,lower,upper)    ((x)<(lower)?(lower):((x)>(upper)?(upper):(x)))
+// REDEFINED #define CONSTRAIN(x,lower,upper)    ((x)<(lower)?(lower):((x)>(upper)?(upper):(x)))
 
 
 /* Private functions --------------------------------------------------------------------*/
@@ -86,31 +86,32 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 		mod->vSaturated = 1;
 	}
 
-
 	// Compute ref Position
-	mod->pos = mod->pos_1 + (dt * mod->vel_1);
+	mod->pos = mod->pos_1 + (dt * mod->vel);
 
 	// Limit position Hard Stops
 	mod->pSaturated = 0;
-
-	if(mod->pos > mod->posMaxLim){
+	
+	if(mod->pos >= mod->posMaxLim){
 
 		mod->pos = mod->posMaxLim;
-		mod->pSaturated = 1;
+		mod->vel = 0;
+		mod->pSaturated = 1;		
 	}
 
-	if(mod->pos < mod->posMinLim){
+	if(mod->pos <= mod->posMinLim){
 
 		mod->pos = mod->posMinLim;
+		mod->vel = 0;
 		mod->pSaturated = 1;
 	}
-
-	/* Calculate damping force */
-	double dampingForce = (mod->c * mod->vel);
 
 	/* Calculate forces relative to the position of the system */
 	double springForce = interpolate_force(mod, mod->pos);
 //	double springForce = (mod->k * mod->pos);
+
+	/* Calculate damping force */
+	double dampingForce = (mod->c * mod->vel);
 
 	/* Friction Model --------------------------------------------------------------------------------*/
 	// F = u * N -> where N is the Normal force between the moving object and the sliding surface.
@@ -124,7 +125,7 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 		double modForce = fabs(iForce - springForce);			// Get the module of the applied force
 
 		/* Choose the smallest force: [applied force] Vs [Static Friction] */
-		frictionForce = (modForce < (mod->us * mod->N)) ? (sign)*modForce : (sign)*(mod->us * mod->N);
+		frictionForce = (modForce < (mod->us * mod->N)) ? (sign) * modForce : (sign) * (mod->us * mod->N);
 
 	}else{
 
@@ -134,15 +135,16 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 
 	/*------------------------------------------------------------------------------------------------*/
 
+	 if(mod->pos > mod->posMaxLim){ /* Just for debugging - Remove if not used */
+		 asm("NOP");
+	 }
+
 	/* Do I want to have mass dependent to the position? for instance I could emulate backslash */
 	/* Do I want to have damping and friction dependent to the position? emulate different surfaces? */
 	/* In a two axis controller the forces relatives to position will depend on a 2 dimensional array */
 
 	// Compute ref Acceleration ->  ∑F = m * a
 	mod->acc = ((1 / (mod->m)) * (iForce - dampingForce - frictionForce - springForce ));
-
-	// Reset Velocity integrator if required.
-	if(mod->pSaturated || stuck) 	mod->vel = 0;	// TODO: Do I need to reset if stuck? or can I let it run free?
 
 	// Store previous values
 	mod->pos_1 = mod->pos;
@@ -176,29 +178,10 @@ static float interpolate_force(rMod_t *mod, double x){
 	/* otherwise find the adjacent upper and lower points in the array to interpolate */
 	for(int i=0; i<last; i++){
 
-		if( cMap[i].x <= x && cMap[i+1].x > x)
+		if( cMap[i].x <= x && cMap[i+1].x >= x)
 			return  cMap[i].f + ((x - cMap[i].x) * (cMap[i+1].f - cMap[i].f)) / (cMap[i+1].x - cMap[i].x);
 
 	}
 
 	return 0; /* The program should never reach this line */
 }
-
-//		/* if pos < min known value > saturate */
-//			if(x < curve[0][0])				return curve[0][1];
-//
-//			/* if pos > max known value > saturate */
-//			else if(x > curve[7][0])		return curve[7][1];
-//
-//			/* otherwise find the adjacent upper and lower points in the array to interpolate */
-//			for(int i=0; i<(8-1); i++){
-//
-//				if( curve[i][0] <= x && curve[i+1][0] > x){
-//
-//					return  curve[i][1] + ((x -curve[i][0]) * (curve[i+1][1]-curve[i][1])) / (curve[i+1][0]-curve[i][0]);
-//
-//				}
-//			}
-
-
-

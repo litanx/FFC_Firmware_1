@@ -163,6 +163,7 @@ int32_t ADS1220_read_blocking(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, 
 	while (HAL_GPIO_ReadPin(DRDY_PORT, DRDY_PIN) == GPIO_PIN_SET)
 	{
 		if (HAL_GetTick() >= maxTime){
+			HAL_Delay(200);
 			return 0;
 		}
 	}

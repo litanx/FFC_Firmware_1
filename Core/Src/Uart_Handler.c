@@ -86,7 +86,9 @@ void UART1_Handler(){
 
 void UART1_printf(const char *fmt, ...){
 
-	char tempBuff[256] = {0};
+	static char tempBuff[256];
+
+	memset(tempBuff, 0, 256);
 	va_list arg;
 
 	va_start (arg, fmt);

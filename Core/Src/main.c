@@ -65,19 +65,8 @@ float posVariance = 0; /* Use commands to drive the motor speed */
 
 rMod_t hmod1 = {0};
 piCon_t hcon1 = {0}; // PI position controller
+cMap_1d_t curve[255] = {{-0.10, -50}, {0.10, 50}};
 
-int32_t ch1 = 0;
-
-cMap_1d_t curve[] = {	{-0.10, -50},
-						{-0.10, 0},
-						{0.028, 0},
-						{0.03, 7},
-						{0.03, -7},
-						{0.032, 0},
-						{0.10, 10},
-						{0.10, 50}};
-
-uint32_t cont=0;
 
 
 /* USER CODE END PV */
@@ -190,20 +179,20 @@ int main(void)
   //ADS1220_start_conversion(&hspi1);
 
 
- // 	uint32_t timeStamp = 0; /* Timer for UART tx */
+  	uint32_t timeStamp = 0; /* Timer for UART tx */
 
   	//force emulation
-	int32_t fOffset = 123;
+	int32_t fOffset = 137;
 	float scalingFactor_N = 84.5;  // bits per Newton
 
-	hmod1.dt = 666; 	// us /* This can go lower than 500us due ADC timing limitations */
+	hmod1.dt = 500; 	// us /* This can go lower than 500us due ADC timing limitations */
 
 	hmod1.m = 0.5;
 	hmod1.c = 10; 		// N.s/m
 	hmod1.k = 50; 		// N/m
 
 	hmod1.cMap = &curve;
-	hmod1.cMap_size = 8;
+	hmod1.cMap_size = 2;
 
 	hmod1.us = 0.2; 		// Dynamic friction coefficient
 	hmod1.ud = 0.2; 		// Static friction coefficient
@@ -217,8 +206,8 @@ int main(void)
 	hmod1.velMinLim = -1;
 
 	hcon1.dt = hmod1.dt;
-	hcon1.kp = 10;
-	hcon1.ki = 1;
+	hcon1.kp = 50;
+	hcon1.ki = 0.5;
 	hcon1.outMax = hmod1.velMaxLim;
 	hcon1.outMin = hmod1.velMinLim;
 
@@ -234,7 +223,7 @@ int main(void)
 
 	// Filter Force
 	  static float smoothForce = 0;
-	  float LPF_Beta = 1;//0.05; // 0<ß<1
+	  float LPF_Beta = 0.6; // 0<ß<1
 	  smoothForce = smoothForce - (LPF_Beta * (smoothForce - force));
 
 	// Reference model
@@ -242,6 +231,9 @@ int main(void)
 	 refModel_Tick(&hmod1, smoothForce, (StepCon_GetPosition()/1000));
 	//------------------------------------------//
 
+	 if(hmod1.pos > hmod1.posMaxLim){
+		 asm("NOP");
+	 }
 	// Position Controller
 	//------------------------------------------//
 	 //posCont_Tick(&hcon1, hmod1.pos, (StepCon_GetPosition()/1000));
@@ -249,17 +241,21 @@ int main(void)
 
 	//------------------------------------------//
 
+	if((StepCon_GetPosition()/1000) > hmod1.posMaxLim){
+		asm("NOP");
+	}
+
 	 /* Drive motor Speed with corrected ref velocity */
 	 speed = (hmod1.vel + refSpeed) * 1000; // to mm/s
 
 	 if(enable) StepCon_Speed(speed);
 	 else 		StepCon_Speed(0);
 
-//	 // Console logs
-//	 if(timeStamp + 100 < HAL_GetTick()){
-//		 UART1_printf("%d, %.4f \n\r", raw, smoothForce);
-//		 timeStamp = HAL_GetTick();
-//	 }
+	 // Console logs
+	 if(timeStamp + 50 < HAL_GetTick()){
+		 UART1_printf("cmd=%.4f, %.4f\r\n", (float)(StepCon_GetPosition()/1000)/*hmod1.pos*/, smoothForce);
+		 timeStamp = HAL_GetTick();
+	 }
 //
 //	//	/* Set here a timer to wait for the elapsed time.
 //	//	 * You can compare the timer counter and trigger an alarm
@@ -271,7 +267,7 @@ int main(void)
 
 		  while(__HAL_TIM_GET_COUNTER(&htim3) < hmod1.dt);
 	  }else{
-		  UART1_printf("TIMING ERROR\n\r");
+		  //UART1_printf("TIMING ERROR\n\r");
 	  }
 	  __HAL_TIM_SET_COUNTER(&htim3, 0);
 
@@ -597,7 +593,7 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 
 	if( isCmd("cmap=") ) {
 
-		cMap_1d_t* points = (cMap_1d_t*) &hmod1.cMap;
+		cMap_1d_t* points = (cMap_1d_t*) hmod1.cMap;
 
 		// Skip the "cmap=" prefix
 		const char* data_start = (const char*)cmd + 5;
@@ -605,7 +601,8 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 		// Determine the number of pairs by counting commas
 		uint16_t num_pairs = 0;
 		const char* ptr = data_start;
-		while (*ptr) {
+		//while (*ptr) {
+		for (int i=0;i<(len-5);i++){
 			if (*ptr == ',') {
 				num_pairs++;
 			}
@@ -614,10 +611,8 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 
 		// Each pair has two values, so number of pairs is half the commas
 		num_pairs = (num_pairs + 1) / 2;
-		if (num_pairs > 255) {
-			//fprintf(stderr, "Exceeded maximum number of pairs (%d).\n", MAX_PAIRS);
-			return;
-		}
+
+		if (num_pairs > 255) return;
 
 		// Parse the data points using sscanf
 		size_t index = 0;
@@ -626,7 +621,7 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 			float x, y;
 			int scanned = sscanf(ptr, "%f,%f", &x, &y);
 			if (scanned == 2) {
-				points[index].x = x;
+				points[index].x = x / 1000;
 				points[index].f = y;
 				index++;
 			}
@@ -639,6 +634,9 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 		}
 
 		hmod1.cMap_size = num_pairs;
+
+		hmod1.posMinLim = points[0].x;
+		hmod1.posMaxLim = points[num_pairs-1].x;
 
 	}else if( isCmd("mass=") ) {
 
@@ -653,28 +651,10 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 			hmod1.c = aux;
 		}
 
-	}else if( isCmd("staf=") ) {
-		int res = sscanf((const char*)cmd,"staf=%f", &aux);
+	}else if( isCmd("frcn=") ) {
+		int res = sscanf((const char*)cmd,"frcn=%f", &aux);
 		if(res) {
-			hmod1.us = aux;
-		}
-
-	}else if( isCmd("dynf=") ) {
-		int res = sscanf((const char*)cmd,"dynf=%f", &aux);
-		if(res) {
-			hmod1.ud = aux;
-		}
-
-	}else if( isCmd("pmax=") ) {
-		int res = sscanf((const char*)cmd,"pmax=%f", &aux);
-		if(res) {
-			hmod1.posMaxLim = aux;
-		}
-
-	}else if( isCmd("pmin=") ) {
-		int res = sscanf((const char*)cmd,"pmin=%f", &aux);
-		if(res) {
-			hmod1.posMinLim = aux;
+			hmod1.N = aux;
 		}
 
 	}else if( isCmd("vmax=") ) {
@@ -706,20 +686,18 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 
 void HAL_GPIO_EXTI_Callback(uint16_t GPIO_Pin){
 
-	uint8_t SPIbuf[3] = {0};
-	long int bit24;
-
-	HAL_SPI_Receive(&hspi1, SPIbuf, 3, 1);
-
-	bit24 = SPIbuf[0];
-	bit24 = (bit24 << 8) | SPIbuf[1];
-	bit24 = (bit24 << 8) | SPIbuf[2]; //Converting 3 bytes to a 24 bit int
-
-	bit24 = (bit24 << 8);
-	fSens = (bit24 >> 8); //Converting 24 bit two's complement to 32 bit two's complement
-
-	cont++;
-	asm("NOP");
+//	uint8_t SPIbuf[3] = {0};
+//	long int bit24;
+//
+//	HAL_SPI_Receive(&hspi1, SPIbuf, 3, 1);
+//
+//	bit24 = SPIbuf[0];
+//	bit24 = (bit24 << 8) | SPIbuf[1];
+//	bit24 = (bit24 << 8) | SPIbuf[2]; //Converting 3 bytes to a 24 bit int
+//
+//	bit24 = (bit24 << 8);
+//	fSens = (bit24 >> 8); //Converting 24 bit two's complement to 32 bit two's complement
+//	asm("NOP");
 }
 /* USER CODE END 4 */
 
