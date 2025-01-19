@@ -58,15 +58,23 @@ DMA_HandleTypeDef hdma_usart1_rx;
 float speed= 0;
 uint8_t enable = 1;
 float force;
-
+uint8_t mLag = 1; //motor lag for x iterations of sensor readings only one motor command is sent
 int32_t fSens = 0;
+float LPF1_Beta = 0.55; // 0<ß<1 Force Filter constant
+float LPF2_Beta = 1; // 0<ß<1 Posistion Filter Constant
 
 float posVariance = 0; /* Use commands to drive the motor speed */
 
 rMod_t hmod1 = {0};
 piCon_t hcon1 = {0}; // PI position controller
-cMap_1d_t curve[255] = {{-0.10, -50}, {0.10, 50}};
-
+//cMap_1d_t curve[255] = {{-0.10, -50}, {0.10, 50}};
+cMap_1d_t curve[255] = {{-0.07, 	-100},
+						{-0.07, 	-25},
+						{-0.0005, 	-10},
+						{ 0.0005, 	 10},
+						{ 0.07, 	 25},
+						{ 0.07, 	 100}};
+uint8_t nPoints = 6; // Number of points defined in the curve vector
 
 
 /* USER CODE END PV */
@@ -81,6 +89,16 @@ static void MX_TIM3_Init(void);
 static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
+uint8_t checkModelTimeout(uint32_t dt){
+
+	  if(__HAL_TIM_GET_COUNTER(&htim3) > dt){
+		  HAL_TIM_Base_Stop(&htim3);
+		  asm("NOP");
+		  HAL_TIM_Base_Start(&htim3);
+		  return 1;
+	  }
+	  return 0;
+}
 //void delay_us(uint16_t us){
 //	__HAL_TIM_SET_COUNTER(&htim2, 0);
 //	while(__HAL_TIM_GET_COUNTER(&htim2) < us);
@@ -154,6 +172,14 @@ int main(void)
   MX_TIM3_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
+//  while(1){
+//
+////		HAL_GPIO_WritePin(GPIOG, GPIO_PIN_5, SET);
+////HAL_Delay(10);
+////		HAL_GPIO_WritePin(GPIOG, GPIO_PIN_5, RESET);
+////
+////  HAL_Delay(10);
+////  }
   HAL_TIM_Base_Start(&htim3);
   HAL_TIM_Base_Start_IT(&htim2);
   UART1_Init();
@@ -187,16 +213,16 @@ int main(void)
 
 	hmod1.dt = 500; 	// us /* This can go lower than 500us due ADC timing limitations */
 
-	hmod1.m = 0.5;
-	hmod1.c = 10; 		// N.s/m
-	hmod1.k = 50; 		// N/m
+	hmod1.m = 1.5;
+	hmod1.c = 30; 		// N.s/m
+	//hmod1.k = 50; 		// N/m
 
 	hmod1.cMap = &curve;
-	hmod1.cMap_size = 2;
+	hmod1.cMap_size = nPoints;
 
 	hmod1.us = 0.2; 		// Dynamic friction coefficient
 	hmod1.ud = 0.2; 		// Static friction coefficient
-	hmod1.N = 1; 			// Normal Force (Weight)
+	hmod1.N = 3; 			// Normal Force (Weight)
 	hmod1.dfv = 0.00001;	// m/s
 
 	hmod1.posMaxLim = 0.12; // Model Hard Stops
@@ -211,51 +237,57 @@ int main(void)
 	hcon1.outMax = hmod1.velMaxLim;
 	hcon1.outMin = hmod1.velMinLim;
 
-//	Sensor_Receive();
-
   while (1)
   {
 
+	  __HAL_TIM_SET_COUNTER(&htim3, 0); // re-start monitoring timer
+
 	  UART1_Handler();
+	  //checkModelTimeout(hmod1.dt);
 
-	  int16_t raw = ((ADS1220_read_singleshot(&hspi1, GPIOC, GPIO_PIN_4, 10) & 0x00FFFF00)>>8) + fOffset;
-	  force = (float)raw / scalingFactor_N;
+	  int32_t sAux = 0;
+	  if( ADS1220_read_singleshot(&hspi1, GPIOC, GPIO_PIN_4, &sAux, 10) ){
+		  int16_t raw = ((sAux & 0x00FFFF00)>>8) + fOffset;
+		  force = (float)raw / scalingFactor_N;
+	  }
+	  //checkModelTimeout(hmod1.dt);
 
-	// Filter Force
+	// Filter 1 Force
 	  static float smoothForce = 0;
-	  float LPF_Beta = 0.6; // 0<ß<1
-	  smoothForce = smoothForce - (LPF_Beta * (smoothForce - force));
+	  smoothForce = smoothForce - (LPF1_Beta * (smoothForce - force));
+	  //checkModelTimeout(hmod1.dt);
 
 	// Reference model
 	//------------------------------------------//
 	 refModel_Tick(&hmod1, smoothForce, (StepCon_GetPosition()/1000));
 	//------------------------------------------//
+	//checkModelTimeout(hmod1.dt);
 
-	 if(hmod1.pos > hmod1.posMaxLim){
-		 asm("NOP");
-	 }
 	// Position Controller
 	//------------------------------------------//
-	 //posCont_Tick(&hcon1, hmod1.pos, (StepCon_GetPosition()/1000));
+	hcon1.dt = hmod1.dt;
 	float refSpeed = Compute_PI(&hcon1, hmod1.pos, (StepCon_GetPosition()/1000));
+	//checkModelTimeout(hmod1.dt);
 
 	//------------------------------------------//
-
-	if((StepCon_GetPosition()/1000) > hmod1.posMaxLim){
-		asm("NOP");
-	}
 
 	 /* Drive motor Speed with corrected ref velocity */
 	 speed = (hmod1.vel + refSpeed) * 1000; // to mm/s
 
-	 if(enable) StepCon_Speed(speed);
-	 else 		StepCon_Speed(0);
+	 static float smoothVel = 0;
+	 smoothVel = smoothVel - (LPF2_Beta * (smoothVel - speed));
+	 //checkModelTimeout(hmod1.dt);
+
+	 StepCon_Speed(smoothVel);
+	 //checkModelTimeout(hmod1.dt);
 
 	 // Console logs
 	 if(timeStamp + 50 < HAL_GetTick()){
-		 UART1_printf("cmd=%.4f, %.4f\r\n", (float)(StepCon_GetPosition()/1000)/*hmod1.pos*/, smoothForce);
+		 UART1_printf("cmd=%.4f, %.4f\r\n", (float)(StepCon_GetPosition()/1000), smoothForce);
 		 timeStamp = HAL_GetTick();
 	 }
+	 //checkModelTimeout(hmod1.dt);
+
 //
 //	//	/* Set here a timer to wait for the elapsed time.
 //	//	 * You can compare the timer counter and trigger an alarm
@@ -263,17 +295,8 @@ int main(void)
 //	//	 * reached this point
 //	//	 **/
 
-	  if(__HAL_TIM_GET_COUNTER(&htim3) < hmod1.dt){
-
-		  while(__HAL_TIM_GET_COUNTER(&htim3) < hmod1.dt);
-	  }else{
-		  //UART1_printf("TIMING ERROR\n\r");
-	  }
-	  __HAL_TIM_SET_COUNTER(&htim3, 0);
-
-
-
-
+	 checkModelTimeout(hmod1.dt);
+	 while(__HAL_TIM_GET_COUNTER(&htim3) < hmod1.dt);
 
     /* USER CODE END WHILE */
 
@@ -294,7 +317,7 @@ void SystemClock_Config(void)
   /** Configure the main internal regulator output voltage
   */
   __HAL_RCC_PWR_CLK_ENABLE();
-  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE3);
+  __HAL_PWR_VOLTAGESCALING_CONFIG(PWR_REGULATOR_VOLTAGE_SCALE1);
 
   /** Initializes the RCC Oscillators according to the specified parameters
   * in the RCC_OscInitTypeDef structure.
@@ -304,10 +327,17 @@ void SystemClock_Config(void)
   RCC_OscInitStruct.PLL.PLLState = RCC_PLL_ON;
   RCC_OscInitStruct.PLL.PLLSource = RCC_PLLSOURCE_HSE;
   RCC_OscInitStruct.PLL.PLLM = 4;
-  RCC_OscInitStruct.PLL.PLLN = 72;
+  RCC_OscInitStruct.PLL.PLLN = 180;
   RCC_OscInitStruct.PLL.PLLP = RCC_PLLP_DIV2;
   RCC_OscInitStruct.PLL.PLLQ = 3;
   if (HAL_RCC_OscConfig(&RCC_OscInitStruct) != HAL_OK)
+  {
+    Error_Handler();
+  }
+
+  /** Activate the Over-Drive mode
+  */
+  if (HAL_PWREx_EnableOverDrive() != HAL_OK)
   {
     Error_Handler();
   }
@@ -318,10 +348,10 @@ void SystemClock_Config(void)
                               |RCC_CLOCKTYPE_PCLK1|RCC_CLOCKTYPE_PCLK2;
   RCC_ClkInitStruct.SYSCLKSource = RCC_SYSCLKSOURCE_PLLCLK;
   RCC_ClkInitStruct.AHBCLKDivider = RCC_SYSCLK_DIV1;
-  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV2;
-  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV2;
+  RCC_ClkInitStruct.APB1CLKDivider = RCC_HCLK_DIV4;
+  RCC_ClkInitStruct.APB2CLKDivider = RCC_HCLK_DIV4;
 
-  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_2) != HAL_OK)
+  if (HAL_RCC_ClockConfig(&RCC_ClkInitStruct, FLASH_LATENCY_5) != HAL_OK)
   {
     Error_Handler();
   }
@@ -350,7 +380,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_HARD_OUTPUT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_16;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -384,7 +414,7 @@ static void MX_TIM2_Init(void)
 
   /* USER CODE END TIM2_Init 1 */
   htim2.Instance = TIM2;
-  htim2.Init.Prescaler = 72-1;
+  htim2.Init.Prescaler = 90-1;
   htim2.Init.CounterMode = TIM_COUNTERMODE_DOWN;
   htim2.Init.Period = 0xffff-1;
   htim2.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -429,7 +459,7 @@ static void MX_TIM3_Init(void)
 
   /* USER CODE END TIM3_Init 1 */
   htim3.Instance = TIM3;
-  htim3.Init.Prescaler = 72-1;
+  htim3.Init.Prescaler = 90-1;
   htim3.Init.CounterMode = TIM_COUNTERMODE_UP;
   htim3.Init.Period = 0xffff-1;
   htim3.Init.ClockDivision = TIM_CLOCKDIVISION_DIV1;
@@ -564,8 +594,15 @@ static void MX_GPIO_Init(void)
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;
   HAL_GPIO_Init(GPIOD, &GPIO_InitStruct);
 
-  /*Configure GPIO pins : PG5 PG7 LD3_Pin LD4_Pin */
-  GPIO_InitStruct.Pin = GPIO_PIN_5|GPIO_PIN_7|LD3_Pin|LD4_Pin;
+  /*Configure GPIO pin : PG5 */
+  GPIO_InitStruct.Pin = GPIO_PIN_5;
+  GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
+  GPIO_InitStruct.Pull = GPIO_NOPULL;
+  GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_VERY_HIGH;
+  HAL_GPIO_Init(GPIOG, &GPIO_InitStruct);
+
+  /*Configure GPIO pins : PG7 LD3_Pin LD4_Pin */
+  GPIO_InitStruct.Pin = GPIO_PIN_7|LD3_Pin|LD4_Pin;
   GPIO_InitStruct.Mode = GPIO_MODE_OUTPUT_PP;
   GPIO_InitStruct.Pull = GPIO_NOPULL;
   GPIO_InitStruct.Speed = GPIO_SPEED_FREQ_LOW;

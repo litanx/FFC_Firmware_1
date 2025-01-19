@@ -99,7 +99,7 @@ void UART1_printf(const char *fmt, ...){
 	HAL_UART_Transmit_IT(&huart1, (const uint8_t*)tempBuff, strlen(tempBuff)); /* Transmit over uart */
 }
 
-//  HAL_UART_Receive_DMA(&huart2, (uint8_t *)GPS_Rx_Buf, GPS_BUF_LEN);  // Initializes DMA for GPS
+
 void HAL_UART_RxCpltCallback(UART_HandleTypeDef *huart){
 
     if(huart == &huart1){

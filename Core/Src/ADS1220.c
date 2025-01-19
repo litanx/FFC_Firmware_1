@@ -8,6 +8,7 @@
  */
 
 #include "ADS1220.h"
+#include "main.h"
 void ADS1220_writeRegister(SPI_HandleTypeDef *hspi, uint8_t address, uint8_t value)
 {
 	uint8_t arr[2] =
@@ -152,21 +153,41 @@ uint8_t* ADS1220_get_config(SPI_HandleTypeDef *hspi, ADS1220_regs *r)
 	return cfgbuf;
 }
 
-int32_t ADS1220_read_blocking(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, uint16_t timeout) // Timeout should be at least as long as sampletime+some clock cycles, obviously
-{
+//int32_t ADS1220_read_blocking(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, uint16_t timeout) // Timeout should be at least as long as sampletime+some clock cycles, obviously
+//{
+//	uint8_t SPIbuf[3] = {0};
+//	int32_t result32 = 0;
+//	long int bit24;
+//
+//	uint32_t maxTime = HAL_GetTick() + timeout;
+//
+//	while (HAL_GPIO_ReadPin(DRDY_PORT, DRDY_PIN) == GPIO_PIN_SET)
+//	{
+//		if (HAL_GetTick() >= maxTime){
+//			HAL_Delay(200);
+//			return 0;
+//		}
+//	}
+//
+//	HAL_SPI_Receive(hspi, SPIbuf, 3, 100);
+//
+//	bit24 = SPIbuf[0];
+//	bit24 = (bit24 << 8) | SPIbuf[1];
+//	bit24 = (bit24 << 8) | SPIbuf[2]; //Converting 3 bytes to a 24 bit int
+//
+//	bit24 = (bit24 << 8);
+//	result32 = (bit24 >> 8); //Converting 24 bit two's complement to 32 bit two's complement
+//
+//	return result32;
+//}
+
+
+uint8_t ADS1220_read_nblocking(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, int32_t* pData){
 	uint8_t SPIbuf[3] = {0};
 	int32_t result32 = 0;
 	long int bit24;
 
-	uint32_t maxTime = HAL_GetTick() + timeout;
-
-	while (HAL_GPIO_ReadPin(DRDY_PORT, DRDY_PIN) == GPIO_PIN_SET)
-	{
-		if (HAL_GetTick() >= maxTime){
-			HAL_Delay(200);
-			return 0;
-		}
-	}
+	if(HAL_GPIO_ReadPin(DRDY_PORT, DRDY_PIN) == GPIO_PIN_SET)	return 0;
 
 	HAL_SPI_Receive(hspi, SPIbuf, 3, 100);
 
@@ -177,28 +198,61 @@ int32_t ADS1220_read_blocking(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, 
 	bit24 = (bit24 << 8);
 	result32 = (bit24 >> 8); //Converting 24 bit two's complement to 32 bit two's complement
 
-	return result32;
+	*pData = result32;
+	return 1;
 }
 
-int32_t ADS1220_read_singleshot(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, uint16_t timeout)
-{
-	ADS1220_start_conversion(hspi);
 
-	return ADS1220_read_blocking(hspi, DRDY_PORT, DRDY_PIN, timeout);
+uint8_t ADS1220_read_singleshot(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, int32_t* pData, uint32_t timeout){
+
+	static uint8_t status = 1;
+	static uint32_t timeStamp = 0;
+
+	switch(status){
+
+	case 0:
+		if( !ADS1220_read_nblocking(hspi, DRDY_PORT, DRDY_PIN, pData) ){
+			if (HAL_GetTick() > (timeStamp + timeout)) 	status = 1; // Timeout, reTry
+			else 			break;									// Still waiting
+		}else{														// Data ready
+			timeStamp = HAL_GetTick();
+			ADS1220_start_conversion(hspi);
+			return 1;
+		}
+
+	case 1:
+		timeStamp = HAL_GetTick();
+		ADS1220_start_conversion(hspi);
+		status = 0;
+		break;
+
+	default:
+		status = 1;
+		break;
+	}
+
+	return 0;
 }
 
-int32_t ADS1220_read_singleshot_channel(SPI_HandleTypeDef *hspi, uint8_t channel_num, ADS1220_regs *r, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, uint16_t timeout)
-{
-	ADS1220_select_mux_config(hspi, channel_num, r);
-
-	ADS1220_start_conversion(hspi);
-
-	return ADS1220_read_blocking(hspi, DRDY_PORT, DRDY_PIN, timeout);
-}
-
-int32_t ADS1220_read_continuous(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, uint16_t timeout)
-{
-	ADS1220_read_data(hspi);
-
-	return ADS1220_read_blocking(hspi, DRDY_PORT, DRDY_PIN, timeout);
-}
+//
+//int32_t ADS1220_read_singleshot(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, uint16_t timeout)
+//{
+//	ADS1220_start_conversion(hspi);
+//
+//	return ADS1220_read_blocking(hspi, DRDY_PORT, DRDY_PIN, timeout);
+//}
+//int32_t ADS1220_read_singleshot_channel(SPI_HandleTypeDef *hspi, uint8_t channel_num, ADS1220_regs *r, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, uint16_t timeout)
+//{
+//	ADS1220_select_mux_config(hspi, channel_num, r);
+//
+//	ADS1220_start_conversion(hspi);
+//
+//	return ADS1220_read_blocking(hspi, DRDY_PORT, DRDY_PIN, timeout);
+//}
+//
+//int32_t ADS1220_read_continuous(SPI_HandleTypeDef *hspi, GPIO_TypeDef *DRDY_PORT, uint16_t DRDY_PIN, uint16_t timeout)
+//{
+//	ADS1220_read_data(hspi);
+//
+//	return ADS1220_read_blocking(hspi, DRDY_PORT, DRDY_PIN, timeout);
+//}
