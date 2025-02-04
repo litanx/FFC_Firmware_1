@@ -29,6 +29,8 @@
 #include "StepperController.h"
 #include "RefModel.h"
 #include "ADS1220.h"
+
+#include <math.h>
 /* USER CODE END Includes */
 
 /* Private typedef -----------------------------------------------------------*/
@@ -55,27 +57,27 @@ UART_HandleTypeDef huart1;
 DMA_HandleTypeDef hdma_usart1_rx;
 
 /* USER CODE BEGIN PV */
-float speed= 0;
-uint8_t enable = 1;
+float speed = 0;
 float force;
-uint8_t mLag = 1; //motor lag for x iterations of sensor readings only one motor command is sent
-int32_t fSens = 0;
-float LPF1_Beta = 0.55; // 0<ß<1 Force Filter constant
-float LPF2_Beta = 1; // 0<ß<1 Posistion Filter Constant
+float LPF1_Beta = 0.6; // 0<ß<1 Force Filter constant
 
-float posVariance = 0; /* Use commands to drive the motor speed */
+/*Debuging only variables */
+float th = 2;
+uint16_t fforce = 0;
+uint16_t tMarks[10] = {0};
+uint16_t timeouts = 0;
+uint16_t oddDrv = 0;
+/**/
 
 rMod_t hmod1 = {0};
 piCon_t hcon1 = {0}; // PI position controller
-//cMap_1d_t curve[255] = {{-0.10, -50}, {0.10, 50}};
-cMap_1d_t curve[255] = {{-0.07, 	-100},
-						{-0.07, 	-25},
-						{-0.0005, 	-10},
-						{ 0.0005, 	 10},
-						{ 0.07, 	 25},
-						{ 0.07, 	 100}};
+cMap_1d_t curve[255] = {{-90, 	 0},
+						{-50, 	 0},
+						{-0.5, 	-20},
+						{ 0.5, 	 20},
+						{ 50, 	 0},
+						{ 90, 	 0}};
 uint8_t nPoints = 6; // Number of points defined in the curve vector
-
 
 /* USER CODE END PV */
 
@@ -89,12 +91,24 @@ static void MX_TIM3_Init(void);
 static void MX_SPI1_Init(void);
 /* USER CODE BEGIN PFP */
 
-uint8_t checkModelTimeout(uint32_t dt){
+uint8_t checkModelTimeout(uint8_t rst, uint32_t dt){
 
+	static uint8_t ptr = 0;
+
+	if (rst) {
+		ptr = 0;
+		memset(tMarks, 0, sizeof(tMarks));
+	}else{
+		if(ptr == 0) tMarks[ptr++] = __HAL_TIM_GET_COUNTER(&htim3);
+		else tMarks[ptr++] = __HAL_TIM_GET_COUNTER(&htim3) - tMarks[ptr-1];
+	}
 	  if(__HAL_TIM_GET_COUNTER(&htim3) > dt){
 		  HAL_TIM_Base_Stop(&htim3);
+		  HAL_TIM_Base_Stop(&htim2);
 		  asm("NOP");
+		  timeouts++;
 		  HAL_TIM_Base_Start(&htim3);
+		  HAL_TIM_Base_Start(&htim2);
 		  return 1;
 	  }
 	  return 0;
@@ -172,14 +186,7 @@ int main(void)
   MX_TIM3_Init();
   MX_SPI1_Init();
   /* USER CODE BEGIN 2 */
-//  while(1){
-//
-////		HAL_GPIO_WritePin(GPIOG, GPIO_PIN_5, SET);
-////HAL_Delay(10);
-////		HAL_GPIO_WritePin(GPIOG, GPIO_PIN_5, RESET);
-////
-////  HAL_Delay(10);
-////  }
+
   HAL_TIM_Base_Start(&htim3);
   HAL_TIM_Base_Start_IT(&htim2);
   UART1_Init();
@@ -213,8 +220,8 @@ int main(void)
 
 	hmod1.dt = 500; 	// us /* This can go lower than 500us due ADC timing limitations */
 
-	hmod1.m = 1.5;
-	hmod1.c = 30; 		// N.s/m
+	hmod1.m = 1;
+	hmod1.c = 20; 		// N.s/m
 	//hmod1.k = 50; 		// N/m
 
 	hmod1.cMap = &curve;
@@ -222,71 +229,74 @@ int main(void)
 
 	hmod1.us = 0.2; 		// Dynamic friction coefficient
 	hmod1.ud = 0.2; 		// Static friction coefficient
-	hmod1.N = 3; 			// Normal Force (Weight)
-	hmod1.dfv = 0.00001;	// m/s
+	hmod1.N = 5; 			// Normal Force (Weight)
+	hmod1.dfv = 0.01;	// mm/s
 
-	hmod1.posMaxLim = 0.12; // Model Hard Stops
-	hmod1.posMinLim = -0.12;
+	hmod1.posMinLim = curve[0].x;
+	hmod1.posMaxLim = curve[nPoints-1].x;
 
-	hmod1.velMaxLim = 1;	// Hardware max reachable speed.
-	hmod1.velMinLim = -1;
+	hmod1.velMaxLim = 1500;	// Hardware max reachable speed.
+	hmod1.velMinLim = -1500;
 
 	hcon1.dt = hmod1.dt;
-	hcon1.kp = 50;
-	hcon1.ki = 0.5;
+	hcon1.kp = 100;
+	hcon1.ki = 0.25;
 	hcon1.outMax = hmod1.velMaxLim;
 	hcon1.outMin = hmod1.velMinLim;
 
   while (1)
   {
-
 	  __HAL_TIM_SET_COUNTER(&htim3, 0); // re-start monitoring timer
+/*N*/  checkModelTimeout(1, hmod1.dt);
 
 	  UART1_Handler();
-	  //checkModelTimeout(hmod1.dt);
+/*0*/  checkModelTimeout(0, hmod1.dt); //9uS
 
 	  int32_t sAux = 0;
 	  if( ADS1220_read_singleshot(&hspi1, GPIOC, GPIO_PIN_4, &sAux, 10) ){
+
 		  int16_t raw = ((sAux & 0x00FFFF00)>>8) + fOffset;
-		  force = (float)raw / scalingFactor_N;
+		  float nforce = (float)raw / scalingFactor_N;
+
+		  /*Debug Foce sensor*/
+		  if(fabs((double)(nforce-force)) > th){
+			fforce++;
+		  }
+
+		  force = nforce;
 	  }
-	  //checkModelTimeout(hmod1.dt);
+/*1*/  checkModelTimeout(0, hmod1.dt); //28
 
 	// Filter 1 Force
 	  static float smoothForce = 0;
 	  smoothForce = smoothForce - (LPF1_Beta * (smoothForce - force));
-	  //checkModelTimeout(hmod1.dt);
+/*2*/  checkModelTimeout(0, hmod1.dt);//1
 
 	// Reference model
 	//------------------------------------------//
-	 refModel_Tick(&hmod1, smoothForce, (StepCon_GetPosition()/1000));
+	 refModel_Tick(&hmod1, smoothForce);
 	//------------------------------------------//
-	//checkModelTimeout(hmod1.dt);
+/*3*/  checkModelTimeout(0, hmod1.dt); //14
 
 	// Position Controller
 	//------------------------------------------//
 	hcon1.dt = hmod1.dt;
-	float refSpeed = Compute_PI(&hcon1, hmod1.pos, (StepCon_GetPosition()/1000));
-	//checkModelTimeout(hmod1.dt);
+	float refSpeed = Compute_PI(&hcon1, hmod1.pos, (StepCon_GetPosition()));
+/*4*/  checkModelTimeout(0, hmod1.dt); //2
 
 	//------------------------------------------//
 
 	 /* Drive motor Speed with corrected ref velocity */
-	 speed = (hmod1.vel + refSpeed) * 1000; // to mm/s
+	 speed = (hmod1.vel + refSpeed); // in mm/s
 
-	 static float smoothVel = 0;
-	 smoothVel = smoothVel - (LPF2_Beta * (smoothVel - speed));
-	 //checkModelTimeout(hmod1.dt);
-
-	 StepCon_Speed(smoothVel);
-	 //checkModelTimeout(hmod1.dt);
+	 StepCon_Speed(speed);
+/*5*/  checkModelTimeout(0, hmod1.dt);
 
 	 // Console logs
 	 if(timeStamp + 50 < HAL_GetTick()){
-		 UART1_printf("cmd=%.4f, %.4f\r\n", (float)(StepCon_GetPosition()/1000), smoothForce);
+		 UART1_printf("cmd=%.4f, %.4f\r\n", (float)StepCon_GetPosition(), smoothForce);
 		 timeStamp = HAL_GetTick();
 	 }
-	 //checkModelTimeout(hmod1.dt);
 
 //
 //	//	/* Set here a timer to wait for the elapsed time.
@@ -295,7 +305,7 @@ int main(void)
 //	//	 * reached this point
 //	//	 **/
 
-	 checkModelTimeout(hmod1.dt);
+/*6*/  checkModelTimeout(0, hmod1.dt);
 	 while(__HAL_TIM_GET_COUNTER(&htim3) < hmod1.dt);
 
     /* USER CODE END WHILE */
@@ -380,7 +390,7 @@ static void MX_SPI1_Init(void)
   hspi1.Init.CLKPolarity = SPI_POLARITY_LOW;
   hspi1.Init.CLKPhase = SPI_PHASE_2EDGE;
   hspi1.Init.NSS = SPI_NSS_HARD_OUTPUT;
-  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_32;
+  hspi1.Init.BaudRatePrescaler = SPI_BAUDRATEPRESCALER_8;
   hspi1.Init.FirstBit = SPI_FIRSTBIT_MSB;
   hspi1.Init.TIMode = SPI_TIMODE_DISABLE;
   hspi1.Init.CRCCalculation = SPI_CRCCALCULATION_DISABLE;
@@ -529,7 +539,7 @@ static void MX_DMA_Init(void)
 
   /* DMA interrupt init */
   /* DMA2_Stream2_IRQn interrupt configuration */
-  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 0, 0);
+  HAL_NVIC_SetPriority(DMA2_Stream2_IRQn, 6, 0);
   HAL_NVIC_EnableIRQ(DMA2_Stream2_IRQn);
 
 }
@@ -658,7 +668,7 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 			float x, y;
 			int scanned = sscanf(ptr, "%f,%f", &x, &y);
 			if (scanned == 2) {
-				points[index].x = x / 1000;
+				points[index].x = x;
 				points[index].f = y;
 				index++;
 			}

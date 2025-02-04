@@ -46,7 +46,7 @@ extern "C" {
 
 /* Exported macro ------------------------------------------------------------*/
 /* USER CODE BEGIN EM */
-
+#define BKPT asm("BKPT")
 /* USER CODE END EM */
 
 /* Exported functions prototypes ---------------------------------------------*/

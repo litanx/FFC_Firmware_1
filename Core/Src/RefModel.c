@@ -61,15 +61,15 @@ float Compute_PI(piCon_t *con, float setpoint, float input){
  * Compute system status for a given input force and position
  */
 
-void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
+void refModel_Tick(rMod_t *mod, double iForce){
 
-	double frictionForce = 0;
+	float frictionForce = 0;
 	uint8_t stuck = 0;			/* = 1 when velocity is under dynamic friction velocity threshold (dfv) */
 
-	double dt = (double)mod->dt / 1000000;	// Convert dt to (s)
+	//double dt = (double)mod->dt / 1000000;	// Convert dt to (s)
 
 	// Compute ref Velocity
-	mod->vel = mod->vel_1 + (dt * mod->acc_1);
+	mod->vel = mod->vel_1 + ((mod->dt * mod->acc_1) / 1000000); // Convert dt to (s)
 
 	// Limit Velocity Hard Stops
 	mod->vSaturated = 0;
@@ -87,7 +87,7 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 	}
 
 	// Compute ref Position
-	mod->pos = mod->pos_1 + (dt * mod->vel);
+	mod->pos = mod->pos_1 + ((mod->dt * mod->vel) / 1000000); // Convert dt to (s)
 
 	// Limit position Hard Stops
 	mod->pSaturated = 0;
@@ -111,7 +111,7 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 //	double springForce = (mod->k * mod->pos);
 
 	/* Calculate damping force */
-	double dampingForce = (mod->c * mod->vel);
+	double dampingForce = ((mod->c * mod->vel) / 1000); // Convert vel to (m/s)
 
 	/* Friction Model --------------------------------------------------------------------------------*/
 	// F = u * N -> where N is the Normal force between the moving object and the sliding surface.
@@ -135,16 +135,12 @@ void refModel_Tick(rMod_t *mod, double iForce, double iPosition){
 
 	/*------------------------------------------------------------------------------------------------*/
 
-	 if(mod->pos > mod->posMaxLim){ /* Just for debugging - Remove if not used */
-		 asm("NOP");
-	 }
-
 	/* Do I want to have mass dependent to the position? for instance I could emulate backslash */
 	/* Do I want to have damping and friction dependent to the position? emulate different surfaces? */
 	/* In a two axis controller the forces relatives to position will depend on a 2 dimensional array */
 
 	// Compute ref Acceleration ->  ∑F = m * a
-	mod->acc = ((1 / (mod->m)) * (iForce - dampingForce - frictionForce - springForce ));
+	mod->acc = ((1000 / (mod->m)) * (iForce - dampingForce - frictionForce - springForce )); // Convert acc to (mm/s2)
 
 	// Store previous values
 	mod->pos_1 = mod->pos;

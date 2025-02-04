@@ -26,7 +26,7 @@ int main(int argc, char const *argv[]) {
 
 	rMod_t hmod1 = {0};
 	piCon_t hcon1 = {0}; // PI position controller
-	cMap_1d_t curve[255] = {{-0.10, -10}, {0.10, 10}};
+	cMap_1d_t curve[255] = {{-100, -10}, {100, 10}};
 
 	hmod1.dt = SAMPLERATE; 	// us /* This can go lower than 500us due ADC timing limitations */
 
@@ -42,11 +42,11 @@ int main(int argc, char const *argv[]) {
 	// hmod1.N = 1; 			// Normal Force (Weight)
 	// hmod1.dfv = 0.00001;	// m/s
 
-	hmod1.posMaxLim = 0.01; // Model Hard Stops
-	hmod1.posMinLim = -0.01;
+	hmod1.posMaxLim = 100; // Model Hard Stops
+	hmod1.posMinLim = -100;
 
-	hmod1.velMaxLim = 1;	// Hardware max reachable speed.
-	hmod1.velMinLim = -1;
+	hmod1.velMaxLim = 1000;	// Hardware max reachable speed.
+	hmod1.velMinLim = -1000;
 
 	hcon1.dt = hmod1.dt;
 	hcon1.kp = 10;
@@ -54,17 +54,17 @@ int main(int argc, char const *argv[]) {
 	hcon1.outMax = hmod1.velMaxLim;
 	hcon1.outMin = hmod1.velMinLim;
 
-	float Force = 20;
+	float Force = 0;
 
 	for (int i=0; i<nSAMPLES; i++){
 
 		//Get Force
 		// Force = 1;
-		if(i>200) Force = 0;
+		if(i>10) Force = 1;
 
 		// Reference model
 		//------------------------------------------//
-		 refModel_Tick(&hmod1, Force, 0);
+		 refModel_Tick(&hmod1, Force);
 		//------------------------------------------//
 
 		// Position Controller

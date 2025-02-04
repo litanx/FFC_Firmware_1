@@ -88,15 +88,15 @@ void UART1_printf(const char *fmt, ...){
 
 	static char tempBuff[256];
 
-	memset(tempBuff, 0, 256);
+	//memset(tempBuff, 0, 256);
 	va_list arg;
 
 	va_start (arg, fmt);
-	vsprintf(tempBuff,fmt, arg);
+	uint16_t len = vsprintf(tempBuff,fmt, arg);
 	va_end (arg);
 
-	//HAL_UART_Transmit(&huart1, (const uint8_t*)tempBuff, strlen(tempBuff), 0xff); /* Transmit over uart */
-	HAL_UART_Transmit_IT(&huart1, (const uint8_t*)tempBuff, strlen(tempBuff)); /* Transmit over uart */
+	//HAL_UART_Transmit(&huart1, (const uint8_t*)tempBuff, len, 0xff); /* Transmit over uart */
+	HAL_UART_Transmit_IT(&huart1, (const uint8_t*)tempBuff, len); /* Transmit over uart */
 }
 
 

@@ -46,7 +46,7 @@ typedef struct {
 
 	/* Model parameters */
 	uint8_t cMap_size;	// number of defined points in the characteristics map
-	void* cMap; 		// Characteristics map array void ptr for 1d and 2d models
+	void* cMap; 		// Characteristics map array void ptr for 1d and 2d models [(mm), (N)]
 
 	float m; 			// Mass (Kg)
 	float c; 			// Damping ratio (N.s/m)
@@ -55,23 +55,23 @@ typedef struct {
 	float us; 			// Static friction coefficient  0.8
 	float ud;			// Dynamic friction coefficient 0.4
 	float N;			// Normal force (Friction force: F = u * N)
-	float dfv; 			// Dynamic Friction Velocity (Speed at which dynamic friction becomes constant)
+	float dfv; 			// Dynamic Friction Velocity (mm/s) (Speed at which dynamic friction becomes constant)
 
 	/* Model limits */
-	float posMaxLim; 	// Max displacement limit (m)
-	float posMinLim; 	// Min displacement limit (m)
+	float posMaxLim; 	// Max displacement limit (mm)
+	float posMinLim; 	// Min displacement limit (mm)
 
-	float velMaxLim; 	// Max velocity limit (m/s)
-	float velMinLim; 	// Min velocity limit (m/s)
+	float velMaxLim; 	// Max velocity limit (mm/s)
+	float velMinLim; 	// Min velocity limit (mm/s)
 
 	/* Model status */
-	double acc;			// Acceleration
-	double vel;			// Velocity
-	double pos;			// Position
+	float acc;			// Acceleration (mm/s2)
+	float vel;			// Velocity (mm/s)
+	float pos;			// Position (mm)
 
-	double acc_1;		// Prev Acceleration
-	double vel_1; 		// Prev Velocity
-	double pos_1;		// Prev Position
+	float acc_1;		// Prev Acceleration (mm/s2)
+	float vel_1; 		// Prev Velocity (mm/s)
+	float pos_1;		// Prev Position (mm)
 
 	uint8_t vSaturated;		/* Flag Saturated Velocity - Prevent reaching Hardware limits*/
 	uint8_t pSaturated;		/* Flag Saturated Position - Hard Stops Emulation */
@@ -82,7 +82,7 @@ typedef struct {
 
 /* Exported functions -------------------------------------------*/
 float Compute_PI(piCon_t *con, float setpoint, float input);
-void refModel_Tick(rMod_t *mod, double iForce, double iPosition);
+void refModel_Tick(rMod_t *mod, double iForce);
 
 
 #endif /* INC_REFMODEL_H_ */
