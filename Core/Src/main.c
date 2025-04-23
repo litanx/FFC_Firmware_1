@@ -250,7 +250,6 @@ int main(void)
 /*N*/  checkModelTimeout(1, hmod1.dt);
 
 	  UART1_Handler();
-/*0*/  checkModelTimeout(0, hmod1.dt); //9uS
 
 	  int32_t sAux = 0;
 	  if( ADS1220_read_singleshot(&hspi1, GPIOC, GPIO_PIN_4, &sAux, 10) ){
@@ -265,24 +264,20 @@ int main(void)
 
 		  force = nforce;
 	  }
-/*1*/  checkModelTimeout(0, hmod1.dt); //28
 
 	// Filter 1 Force
 	  static float smoothForce = 0;
 	  smoothForce = smoothForce - (LPF1_Beta * (smoothForce - force));
-/*2*/  checkModelTimeout(0, hmod1.dt);//1
 
 	// Reference model
 	//------------------------------------------//
 	 refModel_Tick(&hmod1, smoothForce);
 	//------------------------------------------//
-/*3*/  checkModelTimeout(0, hmod1.dt); //14
 
 	// Position Controller
 	//------------------------------------------//
 	hcon1.dt = hmod1.dt;
 	float refSpeed = Compute_PI(&hcon1, hmod1.pos, (StepCon_GetPosition()));
-/*4*/  checkModelTimeout(0, hmod1.dt); //2
 
 	//------------------------------------------//
 
@@ -290,7 +285,6 @@ int main(void)
 	 speed = (hmod1.vel + refSpeed); // in mm/s
 
 	 StepCon_Speed(speed);
-/*5*/  checkModelTimeout(0, hmod1.dt);
 
 	 // Console logs
 	 if(timeStamp + 50 < HAL_GetTick()){
