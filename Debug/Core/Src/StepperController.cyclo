@@ -1,0 +1,3 @@
+../Core/Src/StepperController.c:26:7:StepCon_GetPosition	1
+../Core/Src/StepperController.c:32:6:StepCon_Speed	2
+../Core/Src/StepperController.c:60:6:StepCon_pulseTick	9

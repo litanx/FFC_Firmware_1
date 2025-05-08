@@ -250,7 +250,7 @@ int main(void)
 /*N*/  checkModelTimeout(1, hmod1.dt);
 
 	  UART1_Handler();
-
+	  /*1*/  checkModelTimeout(0, hmod1.dt);
 	  int32_t sAux = 0;
 	  if( ADS1220_read_singleshot(&hspi1, GPIOC, GPIO_PIN_4, &sAux, 10) ){
 
@@ -265,20 +265,21 @@ int main(void)
 		  force = nforce;
 	  }
 
+	  /*2*/  checkModelTimeout(0, hmod1.dt);
 	// Filter 1 Force
 	  static float smoothForce = 0;
 	  smoothForce = smoothForce - (LPF1_Beta * (smoothForce - force));
-
+	  /*3*/  checkModelTimeout(0, hmod1.dt);
 	// Reference model
 	//------------------------------------------//
 	 refModel_Tick(&hmod1, smoothForce);
 	//------------------------------------------//
-
+	 /*4*/  checkModelTimeout(0, hmod1.dt);
 	// Position Controller
 	//------------------------------------------//
 	hcon1.dt = hmod1.dt;
 	float refSpeed = Compute_PI(&hcon1, hmod1.pos, (StepCon_GetPosition()));
-
+	/*5*/  checkModelTimeout(0, hmod1.dt);
 	//------------------------------------------//
 
 	 /* Drive motor Speed with corrected ref velocity */

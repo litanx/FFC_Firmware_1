@@ -1,0 +1,7 @@
+../Core/Src/Uart_Handler.c:46:13:UART1_Cmd_Callback	1
+../Core/Src/Uart_Handler.c:54:6:UART1_Init	1
+../Core/Src/Uart_Handler.c:63:6:UART1_Handler	5
+../Core/Src/Uart_Handler.c:87:6:UART1_printf	1
+../Core/Src/Uart_Handler.c:103:6:HAL_UART_RxCpltCallback	2
+../Core/Src/Uart_Handler.c:110:16:UART1_DataAvailable	6
+../Core/Src/Uart_Handler.c:121:16:UART1_getChar	3
