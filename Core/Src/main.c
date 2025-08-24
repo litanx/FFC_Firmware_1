@@ -71,13 +71,19 @@ uint16_t oddDrv = 0;
 
 rMod_t hmod1 = {0};
 piCon_t hcon1 = {0}; // PI position controller
-cMap_1d_t curve[255] = {{-90, 	 0},
-						{-50, 	 0},
-						{-0.5, 	-20},
-						{ 0.5, 	 20},
-						{ 50, 	 0},
-						{ 90, 	 0}};
-uint8_t nPoints = 6; // Number of points defined in the curve vector
+cMap_1d_t Spring_Map[255] = {{-90, 0},
+                            {-5,   0},
+                            {-5,   10},
+                            { 5,  -10},
+                            { 5,   0},
+                            { 90,  0}};
+uint8_t Spring_Map_Points = 6; // Number of points defined in the curve vector
+
+cMap_1d_t Damping_Map[255] = {{-5,  20},
+							  {0,   10},
+							  {5,   20}};
+uint8_t Damping_Map_Points = 3; // Number of points defined in the curve vector
+
 
 /* USER CODE END PV */
 
@@ -224,16 +230,19 @@ int main(void)
 	hmod1.c = 20; 		// N.s/m
 	//hmod1.k = 50; 		// N/m
 
-	hmod1.cMap = &curve;
-	hmod1.cMap_size = nPoints;
+  hmod1.k_map = &Spring_Map;
+  hmod1.k_mapSize = Spring_Map_Points;
+
+  hmod1.c_map = &Damping_Map;
+  hmod1.c_mapSize = Damping_Map_Points;
 
 	hmod1.us = 0.2; 		// Dynamic friction coefficient
 	hmod1.ud = 0.2; 		// Static friction coefficient
 	hmod1.N = 5; 			// Normal Force (Weight)
 	hmod1.dfv = 0.01;	// mm/s
 
-	hmod1.posMinLim = curve[0].x;
-	hmod1.posMaxLim = curve[nPoints-1].x;
+	hmod1.posMinLim = Spring_Map[0].x;
+	hmod1.posMaxLim = Spring_Map[Spring_Map_Points-1].x;
 
 	hmod1.velMaxLim = 1500;	// Hardware max reachable speed.
 	hmod1.velMinLim = -1500;
@@ -633,52 +642,96 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 	if(!len) return; /* Ignore empty commands */
 
 
-	if( isCmd("cmap=") ) {
+	if( isCmd("fmap=") ) {
 
-		cMap_1d_t* points = (cMap_1d_t*) hmod1.cMap;
+    cMap_1d_t* points = (cMap_1d_t*) hmod1.k_map;
 
-		// Skip the "cmap=" prefix
-		const char* data_start = (const char*)cmd + 5;
+    // Skip the "cmap=" prefix
+    const char* data_start = (const char*)cmd + 5;
 
-		// Determine the number of pairs by counting commas
-		uint16_t num_pairs = 0;
-		const char* ptr = data_start;
-		//while (*ptr) {
-		for (int i=0;i<(len-5);i++){
-			if (*ptr == ',') {
-				num_pairs++;
-			}
-			ptr++;
-		}
+    // Determine the number of pairs by counting commas
+    uint16_t num_pairs = 0;
+    const char* ptr = data_start;
+    //while (*ptr) {
+    for (int i=0;i<(len-5);i++){
+      if (*ptr == ',') {
+        num_pairs++;
+      }
+      ptr++;
+    }
 
-		// Each pair has two values, so number of pairs is half the commas
-		num_pairs = (num_pairs + 1) / 2;
+    // Each pair has two values, so number of pairs is half the commas
+    num_pairs = (num_pairs + 1) / 2;
 
-		if (num_pairs > 255) return;
+    if (num_pairs > 255) return;
 
-		// Parse the data points using sscanf
-		size_t index = 0;
-		ptr = data_start;
-		while (index < num_pairs && *ptr) {
-			float x, y;
-			int scanned = sscanf(ptr, "%f,%f", &x, &y);
-			if (scanned == 2) {
-				points[index].x = x;
-				points[index].f = y;
-				index++;
-			}
+    // Parse the data points using sscanf
+    size_t index = 0;
+    ptr = data_start;
+    while (index < num_pairs && *ptr) {
+      float x, y;
+      int scanned = sscanf(ptr, "%f,%f", &x, &y);
+      if (scanned == 2) {
+        points[index].x = x;
+        points[index].f = y;
+        index++;
+      }
 
-			// Move pointer to the next pair
-			while (*ptr && *ptr != ',') ptr++;
-			if (*ptr == ',') ptr++;
-			while (*ptr && *ptr != ',') ptr++;
-			if (*ptr == ',') ptr++;
-		}
+      // Move pointer to the next pair
+      while (*ptr && *ptr != ',') ptr++;
+      if (*ptr == ',') ptr++;
+      while (*ptr && *ptr != ',') ptr++;
+      if (*ptr == ',') ptr++;
+    }
 
-		hmod1.cMap_size = num_pairs;
+    hmod1.k_mapSize = num_pairs;
 
-		hmod1.posMinLim = points[0].x;
-		hmod1.posMaxLim = points[num_pairs-1].x;
+    hmod1.posMinLim = points[0].x;
+    hmod1.posMaxLim = points[num_pairs-1].x;
+
+  }if( isCmd("cmap=") ) {
+
+    cMap_1d_t* points = (cMap_1d_t*) hmod1.c_map;
+
+    // Skip the "cmap=" prefix
+    const char* data_start = (const char*)cmd + 5;
+
+    // Determine the number of pairs by counting commas
+    uint16_t num_pairs = 0;
+    const char* ptr = data_start;
+    //while (*ptr) {
+    for (int i=0;i<(len-5);i++){
+      if (*ptr == ',') {
+        num_pairs++;
+      }
+      ptr++;
+    }
+
+    // Each pair has two values, so number of pairs is half the commas
+    num_pairs = (num_pairs + 1) / 2;
+
+    if (num_pairs > 255) return;
+
+    // Parse the data points using sscanf
+    size_t index = 0;
+    ptr = data_start;
+    while (index < num_pairs && *ptr) {
+      float x, y;
+      int scanned = sscanf(ptr, "%f,%f", &x, &y);
+      if (scanned == 2) {
+        points[index].x = x;
+        points[index].f = y;
+        index++;
+      }
+
+      // Move pointer to the next pair
+      while (*ptr && *ptr != ',') ptr++;
+      if (*ptr == ',') ptr++;
+      while (*ptr && *ptr != ',') ptr++;
+      if (*ptr == ',') ptr++;
+    }
+
+    hmod1.c_mapSize = num_pairs;
 
 	}else if( isCmd("mass=") ) {
 
@@ -690,7 +743,7 @@ void UART1_Cmd_Callback(uint8_t* cmd, uint16_t len){
 	}else if( isCmd("damp=") ) {
 		int res = sscanf((const char*)cmd,"damp=%f", &aux);
 		if(res) {
-			hmod1.c = aux;
+			//hmod1.c = aux;
 		}
 
 	}else if( isCmd("frcn=") ) {

@@ -15,7 +15,7 @@
 
 
 /* Private functions --------------------------------------------------------------------*/
-static float interpolate_force(rMod_t *mod, double x);
+static float cMap_1d_Interpolate(cMap_1d_t *map, uint16_t len, double x);
 
 
 /*
@@ -107,11 +107,12 @@ void refModel_Tick(rMod_t *mod, double iForce){
 	}
 
 	/* Calculate forces relative to the position of the system */
-	double springForce = interpolate_force(mod, mod->pos);
+	double springForce = cMap_1d_Interpolate(mod->k_map, mod->k_mapSize, mod->pos);
 //	double springForce = (mod->k * mod->pos);
 
 	/* Calculate damping force */
-	double dampingForce = ((mod->c * mod->vel) / 1000); // Convert vel to (m/s)
+	float c = cMap_1d_Interpolate(mod->c_map, mod->c_mapSize, mod->pos);  // Get damping const from map
+	double dampingForce = ((c * mod->vel) / 1000); // Convert vel to (m/s)
 
 	/* Friction Model --------------------------------------------------------------------------------*/
 	// F = u * N -> where N is the Normal force between the moving object and the sliding surface.
@@ -157,25 +158,24 @@ void refModel_Tick(rMod_t *mod, double iForce){
  * x is the point to perform interpolation
  * y is the interpolated value.
  * */
-static float interpolate_force(rMod_t *mod, double x){
+static float cMap_1d_Interpolate(cMap_1d_t *map, uint16_t len, double x){
 
-	if(!mod->cMap_size) 	return 0; // Empty vector
-	if(mod->cMap == NULL) 	return 0; // No vector defined
+	if(!len) 			return 0; // Empty vector
+	if(map == NULL) 	return 0; // No vector defined
 
-	cMap_1d_t* cMap = (cMap_1d_t*)mod->cMap;
-	uint8_t last = mod->cMap_size - 1;
+	uint8_t last = len - 1; 	  // Compute it only once to save some time
 
 	/* if pos < min known value > saturate */
-	if(x < cMap[0].x)				return cMap[0].f;
+	if(x < map[0].x)				return map[0].f;
 
 	/* if pos > max known value > saturate */
-	else if(x > cMap[last].x)		return cMap[last].f;
+	else if(x > map[last].x)		return map[last].f;
 
 	/* otherwise find the adjacent upper and lower points in the array to interpolate */
 	for(int i=0; i<last; i++){
 
-		if( cMap[i].x <= x && cMap[i+1].x >= x)
-			return  cMap[i].f + ((x - cMap[i].x) * (cMap[i+1].f - cMap[i].f)) / (cMap[i+1].x - cMap[i].x);
+		if( map[i].x <= x && map[i+1].x >= x)
+			return  map[i].f + ((x - map[i].x) * (map[i+1].f - map[i].f)) / (map[i+1].x - map[i].x);
 
 	}
 

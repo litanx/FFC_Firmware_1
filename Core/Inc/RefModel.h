@@ -45,12 +45,16 @@ typedef struct {
 	uint32_t dt; 		// Sampling rate - time (us)
 
 	/* Model parameters */
-	uint8_t cMap_size;	// number of defined points in the characteristics map
-	void* cMap; 		// Characteristics map array void ptr for 1d and 2d models [(mm), (N)]
 
 	float m; 			// Mass (Kg)
+
+	//float k; 			// Elastic constant (N/m)
+	uint16_t k_mapSize;// number of defined points in the characteristics map
+	void* k_map; 		// Characteristics map array void ptr for 1d model [(mm), (N)]
+
 	float c; 			// Damping ratio (N.s/m)
-	float k; 			// Elastic constant (N/m)
+	uint16_t c_mapSize;// number of defined points in the characteristics map
+	void* c_map; 		// Characteristics map array void ptr for 1d model [(mm), (N)]
 
 	float us; 			// Static friction coefficient  0.8
 	float ud;			// Dynamic friction coefficient 0.4
@@ -69,6 +73,7 @@ typedef struct {
 	float vel;			// Velocity (mm/s)
 	float pos;			// Position (mm)
 
+	/*TODO: Probably I don't need to keep these */
 	float acc_1;		// Prev Acceleration (mm/s2)
 	float vel_1; 		// Prev Velocity (mm/s)
 	float pos_1;		// Prev Position (mm)
